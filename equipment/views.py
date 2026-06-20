@@ -103,8 +103,7 @@ def equipment_list(request):
     if search:
         equipments = equipments.filter(name__icontains=search)
 
-    categories = Equipment.objects.values_list('category', flat=True).distinct()
-    categories = [c for c in categories if c]
+    categories = sorted(set(c for c in Equipment.objects.values_list('category', flat=True) if c and c.strip()))
 
     context = {
         'equipments': equipments,
@@ -557,8 +556,7 @@ def admin_equipment_list(request):
 
     equipments = equipments.order_by('-updated_at')
 
-    categories = list(Equipment.objects.values_list('category', flat=True).distinct())
-    categories = [c for c in categories if c]
+    categories = sorted(set(c for c in Equipment.objects.values_list('category', flat=True) if c and c.strip()))
 
     for eq in equipments:
         eq.occupied_quantity = get_equipment_occupied_quantity(eq)
