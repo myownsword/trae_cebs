@@ -746,6 +746,10 @@ def create_waitlist_entry(user, equipment, reservation_date, time_slot, quantity
     if quantity > equipment.total_quantity:
         raise ReservationError(f'候补数量不能超过总库存 {equipment.total_quantity}')
 
+    available = get_available_quantity(equipment, reservation_date, time_slot)
+    if available >= quantity:
+        raise ReservationError(f'该时段仍有可预约库存（当前可用 {available} 件），请直接预约，无需候补')
+
     existing = WaitlistEntry.objects.filter(
         user=user,
         equipment=equipment,
@@ -919,40 +923,41 @@ def process_waitlist_auto(equipment, reservation_date, time_slot, request=None):
     promoted = []
     for entry in waiting_entries:
         available = get_available_quantity(equipment, reservation_date, time_slot)
-        if available >= entry.quantity:
-            with transaction.atomic():
-                reservation = Reservation.objects.create(
-                    user=entry.user,
-                    equipment=equipment,
-                    reservation_date=reservation_date,
-                    time_slot=time_slot,
-                    quantity=entry.quantity,
-                    status=Reservation.STATUS_PENDING,
-                )
+        if available < entry.quantity:
+            break
+        with transaction.atomic():
+            reservation = Reservation.objects.create(
+                user=entry.user,
+                equipment=equipment,
+                reservation_date=reservation_date,
+                time_slot=time_slot,
+                quantity=entry.quantity,
+                status=Reservation.STATUS_PENDING,
+            )
 
-                entry.status = WaitlistEntry.STATUS_PROMOTED
-                entry.promoted_reservation = reservation
-                entry.save()
+            entry.status = WaitlistEntry.STATUS_PROMOTED
+            entry.promoted_reservation = reservation
+            entry.save()
 
-                ip = get_client_ip(request) if request else None
-                log_audit(
-                    user=None,
-                    action=AuditLog.ACTION_WAITLIST_PROMOTE,
-                    target_type='waitlist',
-                    target_id=entry.id,
-                    details=f'自动提升候补为预约：{entry.user.username} - {equipment.name} {entry.quantity} 件，预约ID：{reservation.id}',
-                    ip_address=ip,
-                )
+            ip = get_client_ip(request) if request else None
+            log_audit(
+                user=None,
+                action=AuditLog.ACTION_WAITLIST_PROMOTE,
+                target_type='waitlist',
+                target_id=entry.id,
+                details=f'自动提升候补为预约：{entry.user.username} - {equipment.name} {entry.quantity} 件，预约ID：{reservation.id}',
+                ip_address=ip,
+            )
 
-                log_audit(
-                    user=entry.user,
-                    action=AuditLog.ACTION_CREATE,
-                    target_type='reservation',
-                    target_id=reservation.id,
-                    details=f'候补自动转为预约：{equipment.name} {entry.quantity} 件，日期：{reservation_date}，时段：{time_slot}',
-                    ip_address=ip,
-                )
+            log_audit(
+                user=entry.user,
+                action=AuditLog.ACTION_CREATE,
+                target_type='reservation',
+                target_id=reservation.id,
+                details=f'候补自动转为预约：{equipment.name} {entry.quantity} 件，日期：{reservation_date}，时段：{time_slot}',
+                ip_address=ip,
+            )
 
-            promoted.append(entry)
+        promoted.append(entry)
 
     return promoted

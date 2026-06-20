@@ -179,6 +179,19 @@ class WaitlistTestCase(TestCase):
         self.tomorrow = date.today() + timedelta(days=1)
         self.time_slot = Reservation.TIME_SLOT_MORNING
 
+    def _fill_stock(self, eq=None, date_=None, slot=None, user=None, qty=None):
+        eq = eq or self.equipment
+        date_ = date_ or self.tomorrow
+        slot = slot or self.time_slot
+        user = user or self.user1
+        qty = qty or eq.total_quantity
+        r = create_reservation(
+            user=user, equipment=eq,
+            reservation_date=date_, time_slot=slot, quantity=qty
+        )
+        approve_reservation(r, self.admin)
+        return r
+
     def test_01_full_stock_enters_waitlist(self):
         r1 = create_reservation(
             user=self.user1, equipment=self.equipment,
@@ -314,6 +327,7 @@ class WaitlistTestCase(TestCase):
         self.assertEqual(w1.status, WaitlistEntry.STATUS_WAITING)
 
     def test_05_non_owner_cancel_fails(self):
+        self._fill_stock()
         w1 = create_waitlist_entry(
             user=self.user2, equipment=self.equipment,
             reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
@@ -359,6 +373,7 @@ class WaitlistTestCase(TestCase):
         self.assertIsNotNone(w2.promoted_reservation)
 
     def test_07_admin_reject_waitlist(self):
+        self._fill_stock()
         w1 = create_waitlist_entry(
             user=self.user2, equipment=self.equipment,
             reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
@@ -377,18 +392,19 @@ class WaitlistTestCase(TestCase):
         ).exists())
 
     def test_08_admin_manual_promote(self):
-        r1 = create_reservation(
-            user=self.user1, equipment=self.equipment,
-            reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
-        )
-        approve_reservation(r1, self.admin)
-
+        self._fill_stock()
         w1 = create_waitlist_entry(
             user=self.user2, equipment=self.equipment,
             reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
         )
 
-        cancel_reservation(r1, self.user1)
+        r_block = Reservation.objects.filter(
+            equipment=self.equipment,
+            reservation_date=self.tomorrow,
+            time_slot=self.time_slot,
+            status__in=[Reservation.STATUS_PENDING, Reservation.STATUS_APPROVED, Reservation.STATUS_PICKED_UP],
+        ).first()
+        cancel_reservation(r_block, r_block.user)
 
         promote_waitlist_entry(w1, self.admin)
 
@@ -431,6 +447,7 @@ class WaitlistTestCase(TestCase):
         self.assertEqual(w1.status, WaitlistEntry.STATUS_PROMOTED)
 
     def test_11_duplicate_waitlist_blocked(self):
+        self._fill_stock()
         create_waitlist_entry(
             user=self.user2, equipment=self.equipment,
             reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
@@ -444,6 +461,7 @@ class WaitlistTestCase(TestCase):
         self.assertIn('重复加入', str(ctx.exception))
 
     def test_12_cancel_own_waitlist(self):
+        self._fill_stock()
         w1 = create_waitlist_entry(
             user=self.user2, equipment=self.equipment,
             reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
@@ -461,6 +479,7 @@ class WaitlistTestCase(TestCase):
         ).exists())
 
     def test_13_non_staff_cannot_skip(self):
+        self._fill_stock()
         w1 = create_waitlist_entry(
             user=self.user2, equipment=self.equipment,
             reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
@@ -495,6 +514,7 @@ class WaitlistTestCase(TestCase):
         self.assertEqual(resp.status_code, 200)
 
     def test_16_waitlist_join_view(self):
+        self._fill_stock()
         client = Client()
         client.login(username='user_wl1', password='pass1234')
         resp = client.post(reverse('equipment:waitlist_join', kwargs={'pk': self.equipment.pk}), {
@@ -506,6 +526,7 @@ class WaitlistTestCase(TestCase):
         self.assertTrue(WaitlistEntry.objects.filter(user=self.user1).exists())
 
     def test_17_waitlist_cancel_view_owner(self):
+        self._fill_stock()
         w1 = create_waitlist_entry(
             user=self.user2, equipment=self.equipment,
             reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
@@ -518,6 +539,7 @@ class WaitlistTestCase(TestCase):
         self.assertEqual(w1.status, WaitlistEntry.STATUS_CANCELLED)
 
     def test_18_waitlist_cancel_view_non_owner_fails(self):
+        self._fill_stock()
         w1 = create_waitlist_entry(
             user=self.user2, equipment=self.equipment,
             reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
@@ -527,3 +549,74 @@ class WaitlistTestCase(TestCase):
         resp = client.post(reverse('equipment:waitlist_cancel', kwargs={'pk': w1.pk}))
         w1.refresh_from_db()
         self.assertEqual(w1.status, WaitlistEntry.STATUS_WAITING)
+
+    def test_19_head_needs_2_only_1_free_no_promote_behind(self):
+        eq = create_equipment(self.admin, '队首阻塞测试', '电子', 'd', 2)
+        r_full = self._fill_stock(eq=eq, qty=2)
+        w_head = create_waitlist_entry(
+            user=self.user1, equipment=eq,
+            reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=2
+        )
+        w_behind = create_waitlist_entry(
+            user=self.user2, equipment=eq,
+            reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
+        )
+
+        r_partial = create_reservation(
+            user=self.user3, equipment=eq,
+            reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
+        )
+        approve_reservation(r_partial, self.admin)
+        cancel_reservation(r_partial, self.user3)
+
+        w_head.refresh_from_db()
+        w_behind.refresh_from_db()
+        self.assertEqual(w_head.status, WaitlistEntry.STATUS_WAITING)
+        self.assertEqual(w_behind.status, WaitlistEntry.STATUS_WAITING)
+
+        self.assertTrue(AuditLog.objects.filter(
+            action=AuditLog.ACTION_WAITLIST_CREATE,
+            target_type='waitlist',
+            target_id=w_head.id,
+        ).exists())
+
+    def test_20_join_waitlist_stock_available_blocked(self):
+        with self.assertRaises(ReservationError) as ctx:
+            create_waitlist_entry(
+                user=self.user2, equipment=self.equipment,
+                reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
+            )
+        self.assertIn('请直接预约', str(ctx.exception))
+
+    def test_21_skip_head_promotes_behind_auto(self):
+        eq = create_equipment(self.admin, '跳过队首测试', '电子', 'd', 2)
+        self._fill_stock(eq=eq, qty=2)
+        w_head = create_waitlist_entry(
+            user=self.user1, equipment=eq,
+            reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=2
+        )
+        w_behind = create_waitlist_entry(
+            user=self.user2, equipment=eq,
+            reservation_date=self.tomorrow, time_slot=self.time_slot, quantity=1
+        )
+
+        skip_waitlist_entry(w_head, self.admin)
+        w_head.refresh_from_db()
+        self.assertEqual(w_head.status, WaitlistEntry.STATUS_SKIPPED)
+        self.assertTrue(AuditLog.objects.filter(
+            action=AuditLog.ACTION_WAITLIST_SKIP,
+            target_type='waitlist',
+            target_id=w_head.id,
+        ).exists())
+
+        r_block = Reservation.objects.filter(
+            equipment=eq,
+            reservation_date=self.tomorrow,
+            time_slot=self.time_slot,
+            status__in=[Reservation.STATUS_PENDING, Reservation.STATUS_APPROVED, Reservation.STATUS_PICKED_UP],
+        ).first()
+        cancel_reservation(r_block, r_block.user)
+
+        w_behind.refresh_from_db()
+        self.assertEqual(w_behind.status, WaitlistEntry.STATUS_PROMOTED)
+        self.assertIsNotNone(w_behind.promoted_reservation)
