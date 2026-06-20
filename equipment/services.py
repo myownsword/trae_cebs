@@ -258,20 +258,41 @@ def return_reservation(reservation, admin_user, note='', is_damaged=False, damag
                 note=f'归还：{reservation.user.username}',
             )
         else:
-            damage_record = DamageRecord.objects.create(
-                equipment=reservation.equipment,
+            equipment = reservation.equipment
+            damage_qty = reservation.quantity
+
+            DamageRecord.objects.create(
+                equipment=equipment,
                 reported_by=admin_user,
                 description=damage_description or note or '归还时发现损坏',
-                quantity=reservation.quantity,
+                quantity=damage_qty,
                 status=DamageRecord.STATUS_REPORTED,
             )
+
+            equipment.total_quantity = max(0, equipment.total_quantity - damage_qty)
+            if equipment.total_quantity <= 0:
+                equipment.status = Equipment.STATUS_DAMAGED
+            equipment.save()
+
+            StockFlow.objects.create(
+                equipment=equipment,
+                flow_type=StockFlow.FLOW_OUT,
+                flow_reason=StockFlow.FLOW_REASON_DAMAGE,
+                quantity=damage_qty,
+                reservation=reservation,
+                operator=admin_user,
+                note=f'归还时损坏：{reservation.user.username}，描述：{(damage_description or note)[:50]}',
+                balance_after=equipment.available_quantity,
+            )
+
+            ip = get_client_ip(request) if request else None
             log_audit(
                 user=admin_user,
                 action=AuditLog.ACTION_DAMAGE,
-                target_type='damage',
-                target_id=damage_record.id,
-                details=f'归还时发现损坏：{reservation.equipment.name} {reservation.quantity} 件，描述：{damage_description}',
-                ip_address=get_client_ip(request) if request else None,
+                target_type='equipment',
+                target_id=equipment.id,
+                details=f'归还时发现损坏：{equipment.name} {damage_qty} 件，描述：{damage_description or note}，总库存已扣减',
+                ip_address=ip,
             )
 
         ip = get_client_ip(request) if request else None
@@ -315,9 +336,10 @@ def report_damage(equipment, user, description, quantity=1, request=None):
             note=f'损坏上报：{description[:50]}',
         )
 
-        if equipment.available_quantity <= 0:
+        equipment.total_quantity = max(0, equipment.total_quantity - quantity)
+        if equipment.total_quantity <= 0 or equipment.available_quantity <= 0:
             equipment.status = Equipment.STATUS_DAMAGED
-            equipment.save()
+        equipment.save()
 
         ip = get_client_ip(request) if request else None
         log_audit(
@@ -325,7 +347,7 @@ def report_damage(equipment, user, description, quantity=1, request=None):
             action=AuditLog.ACTION_DAMAGE,
             target_type='damage',
             target_id=damage_record.id,
-            details=f'上报损坏 {equipment.name} {quantity} 件：{description}',
+            details=f'上报损坏 {equipment.name} {quantity} 件：{description}，总库存已扣减',
             ip_address=ip,
         )
 

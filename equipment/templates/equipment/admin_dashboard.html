@@ -19,12 +19,8 @@
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <div>
                                 <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
-                                <p class="mb-1 text-muted small">
-                                    预约人：{{ r.user.username }}
-                                </p>
-                                <p class="mb-0 text-muted small">
-                                    {{ r.reservation_date }} {{ r.get_time_slot_display }}
-                                </p>
+                                <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
+                                <p class="mb-0 text-muted small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
                                 {% if r.purpose %}
                                 <p class="mb-0 text-muted small mt-1">用途：{{ r.purpose|truncatechars:50 }}</p>
                                 {% endif %}
@@ -39,7 +35,7 @@
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-sm btn-success">批准</button>
                             </form>
-                            <button class="btn btn-sm btn-danger" 
+                            <button class="btn btn-sm btn-danger"
                                     onclick="showRejectModal({{ r.id }})">拒绝</button>
                         </div>
                     </div>
@@ -53,6 +49,76 @@
     </div>
 
     <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header bg-primary bg-opacity-10">
+                <h5 class="mb-0">✅ 已批准待领取 ({{ approved_reservations|length }})</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if approved_reservations %}
+                <div class="list-group list-group-flush">
+                    {% for r in approved_reservations %}
+                    <div id="reservation-{{ r.id }}" class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
+                                <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
+                                <p class="mb-0 text-muted small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
+                                <p class="mb-0 text-muted small mt-1">
+                                    审批人：{{ r.approved_by.username|default:"-" }} ·
+                                    {{ r.approved_at|date:"m-d H:i" }}
+                                </p>
+                            </div>
+                            <span class="badge bg-primary">已批准</span>
+                        </div>
+                        <form method="post" action="{% url 'equipment:reservation_pickup' r.pk %}"
+                              hx-post="{% url 'equipment:reservation_pickup' r.pk %}"
+                              hx-target="#reservation-{{ r.id }}"
+                              hx-swap="outerHTML">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-primary">登记领取</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center py-4 mb-0">暂无待领取预约</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-info bg-opacity-10">
+                <h5 class="mb-0">📦 已领取待归还 ({{ picked_reservations|length }})</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if picked_reservations %}
+                <div class="list-group list-group-flush">
+                    {% for r in picked_reservations %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
+                                <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
+                                <p class="mb-0 text-muted small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
+                                <p class="mb-0 text-muted small mt-1">领取时间：{{ r.picked_at|date:"m-d H:i" }}</p>
+                            </div>
+                            <span class="badge bg-info">已领取</span>
+                        </div>
+                        <a href="{% url 'equipment:reservation_return' r.pk %}"
+                           class="btn btn-sm btn-outline-primary">登记归还</a>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center py-4 mb-0">暂无待归还预约</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-2">
+    <div class="col-md-6">
         <div class="card">
             <div class="card-header bg-danger bg-opacity-10">
                 <h5 class="mb-0">⏰ 逾期记录 ({{ overdue_reservations|length }})</h5>
@@ -65,17 +131,13 @@
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
                                 <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
-                                <p class="mb-1 text-muted small">
-                                    预约人：{{ r.user.username }}
-                                </p>
-                                <p class="mb-0 text-danger small">
-                                    {{ r.reservation_date }} {{ r.get_time_slot_display }}
-                                </p>
+                                <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
+                                <p class="mb-0 text-danger small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
                             </div>
                             <div>
                                 <span class="badge bg-danger mb-2 d-block">已逾期</span>
                                 {% if r.status == 'overdue' and r.picked_at %}
-                                <a href="{% url 'equipment:reservation_return' r.pk %}" 
+                                <a href="{% url 'equipment:reservation_return' r.pk %}"
                                    class="btn btn-sm btn-outline-primary">登记归还</a>
                                 {% endif %}
                             </div>
@@ -89,9 +151,7 @@
             </div>
         </div>
     </div>
-</div>
 
-<div class="row g-4 mt-2">
     <div class="col-md-12">
         <div class="card">
             <div class="card-header bg-info bg-opacity-10 d-flex justify-content-between align-items-center">
@@ -127,7 +187,7 @@
                                 </td>
                                 <td>{{ d.created_at|date:"Y-m-d H:i" }}</td>
                                 <td>
-                                    <button class="btn btn-sm btn-primary" 
+                                    <button class="btn btn-sm btn-primary"
                                             onclick="showDamageProcessModal({{ d.id }}, '{{ d.equipment.name }}')">
                                         处理
                                     </button>

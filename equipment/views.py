@@ -1,6 +1,7 @@
+import codecs
 import csv
 from datetime import datetime, timedelta
-from io import StringIO
+from io import BytesIO
 
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth import authenticate, login, logout
@@ -229,11 +230,21 @@ def admin_dashboard(request):
         status=Reservation.STATUS_PENDING
     ).select_related('user', 'equipment').order_by('created_at')
 
+    approved_reservations = Reservation.objects.filter(
+        status=Reservation.STATUS_APPROVED
+    ).select_related('user', 'equipment').order_by('reservation_date', 'time_slot')
+
+    picked_reservations = Reservation.objects.filter(
+        status=Reservation.STATUS_PICKED
+    ).select_related('user', 'equipment').order_by('picked_at')
+
     overdue_reservations = get_overdue_reservations()
     pending_damages = get_pending_damages()
 
     context = {
         'pending_reservations': pending_reservations,
+        'approved_reservations': approved_reservations,
+        'picked_reservations': picked_reservations,
         'overdue_reservations': list(overdue_reservations),
         'pending_damages': list(pending_damages),
     }
@@ -430,13 +441,13 @@ def export_csv(request):
         end_date = datetime(year, month_num + 1, 1).date()
 
     reservations = Reservation.objects.filter(
-        reservation_date__range=[start_date, end_date]
+        reservation_date__gte=start_date,
+        reservation_date__lt=end_date,
     ).select_related('user', 'equipment').order_by('reservation_date', 'time_slot')
 
-    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
-    response['Content-Disposition'] = f'attachment; filename="reservations_{month}.csv"'
-
-    writer = csv.writer(response)
+    buffer = BytesIO()
+    buffer.write(b'\xef\xbb\xbf')
+    writer = csv.writer(codecs.getwriter('utf-8')(buffer))
     writer.writerow([
         '预约ID', '预约人', '器材名称', '预约日期', '时段',
         '数量', '状态', '用途', '审批人', '审批时间',
@@ -460,6 +471,8 @@ def export_csv(request):
             r.created_at.strftime('%Y-%m-%d %H:%M'),
         ])
 
+    response = HttpResponse(buffer.getvalue(), content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="reservations_{month}.csv"'
     return response
 
 
@@ -479,13 +492,13 @@ def export_stock_csv(request):
         end_date = datetime(year, month_num + 1, 1)
 
     flows = StockFlow.objects.filter(
-        created_at__range=[start_date, end_date]
+        created_at__gte=start_date,
+        created_at__lt=end_date,
     ).select_related('equipment', 'operator', 'reservation').order_by('created_at')
 
-    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
-    response['Content-Disposition'] = f'attachment; filename="stock_flows_{month}.csv"'
-
-    writer = csv.writer(response)
+    buffer = BytesIO()
+    buffer.write(b'\xef\xbb\xbf')
+    writer = csv.writer(codecs.getwriter('utf-8')(buffer))
     writer.writerow([
         '流水ID', '器材名称', '流动类型', '变动原因',
         '数量', '变动后库存', '操作人', '关联预约ID',
@@ -506,4 +519,6 @@ def export_stock_csv(request):
             f.created_at.strftime('%Y-%m-%d %H:%M'),
         ])
 
+    response = HttpResponse(buffer.getvalue(), content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="stock_flows_{month}.csv"'
     return response
