@@ -229,22 +229,56 @@ def reservation_cancel(request, pk):
 @login_required
 @user_passes_test(is_staff)
 def admin_dashboard(request):
-    check_and_mark_overdue()
+    from django.core.paginator import Paginator, EmptyPage
 
-    pending_reservations = Reservation.objects.filter(
+    check_and_mark_overdue()
+    per_page = 5
+
+    pending_qs = Reservation.objects.filter(
         status=Reservation.STATUS_PENDING
     ).select_related('user', 'equipment').order_by('created_at')
 
-    approved_reservations = Reservation.objects.filter(
+    approved_qs = Reservation.objects.filter(
         status=Reservation.STATUS_APPROVED
     ).select_related('user', 'equipment').order_by('reservation_date', 'time_slot')
 
-    picked_reservations = Reservation.objects.filter(
+    picked_qs = Reservation.objects.filter(
         status=Reservation.STATUS_PICKED
     ).select_related('user', 'equipment').order_by('picked_at')
 
-    overdue_reservations = get_overdue_reservations()
-    pending_damages = get_pending_damages()
+    overdue_qs = get_overdue_reservations()
+    damage_qs = get_pending_damages()
+
+    pending_paginator = Paginator(pending_qs, per_page)
+    approved_paginator = Paginator(approved_qs, per_page)
+    picked_paginator = Paginator(picked_qs, per_page)
+    overdue_paginator = Paginator(overdue_qs, per_page)
+    damage_paginator = Paginator(damage_qs, per_page)
+
+    try:
+        pending_page = pending_paginator.page(int(request.GET.get('pending_page', 1)))
+    except (EmptyPage, ValueError):
+        pending_page = pending_paginator.page(pending_paginator.num_pages)
+
+    try:
+        approved_page = approved_paginator.page(int(request.GET.get('approved_page', 1)))
+    except (EmptyPage, ValueError):
+        approved_page = approved_paginator.page(approved_paginator.num_pages)
+
+    try:
+        picked_page = picked_paginator.page(int(request.GET.get('picked_page', 1)))
+    except (EmptyPage, ValueError):
+        picked_page = picked_paginator.page(picked_paginator.num_pages)
+
+    try:
+        overdue_page = overdue_paginator.page(int(request.GET.get('overdue_page', 1)))
+    except (EmptyPage, ValueError):
+        overdue_page = overdue_paginator.page(overdue_paginator.num_pages)
+
+    try:
+        damage_page = damage_paginator.page(int(request.GET.get('damage_page', 1)))
+    except (EmptyPage, ValueError):
+        damage_page = damage_paginator.page(damage_paginator.num_pages)
 
     equipment_stats = {
         'total': Equipment.objects.count(),
@@ -256,11 +290,11 @@ def admin_dashboard(request):
     }
 
     context = {
-        'pending_reservations': pending_reservations,
-        'approved_reservations': approved_reservations,
-        'picked_reservations': picked_reservations,
-        'overdue_reservations': list(overdue_reservations),
-        'pending_damages': list(pending_damages),
+        'pending_page': pending_page,
+        'approved_page': approved_page,
+        'picked_page': picked_page,
+        'overdue_page': overdue_page,
+        'damage_page': damage_page,
         'equipment_stats': equipment_stats,
     }
     return render(request, 'equipment/admin_dashboard.html', context)

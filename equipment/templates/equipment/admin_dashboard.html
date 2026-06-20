@@ -29,202 +29,201 @@
   </div>
 </div>
 
+<style>
+.dash-card { display: flex; flex-direction: column; }
+.dash-card .card-body-scroll { flex: 1 1 0; max-height: 380px; overflow-y: auto; }
+.dash-card .card-footer { flex-shrink: 0; background: #f8f9fa; }
+</style>
+
 <div class="row g-4">
     <div class="col-md-6">
-        <div class="card">
+        <div class="card dash-card">
             <div class="card-header bg-warning bg-opacity-10">
-                <h5 class="mb-0">⏳ 待审批预约 ({{ pending_reservations|length }})</h5>
+                <h5 class="mb-0">⏳ 待审批预约 ({{ pending_page.paginator.count }})</h5>
             </div>
-            <div class="card-body p-0">
-                {% if pending_reservations %}
-                <div class="list-group list-group-flush">
-                    {% for r in pending_reservations %}
-                    <div id="reservation-{{ r.id }}" class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div>
-                                <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
-                                <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
-                                <p class="mb-0 text-muted small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
-                                {% if r.purpose %}
-                                <p class="mb-0 text-muted small mt-1">用途：{{ r.purpose|truncatechars:50 }}</p>
-                                {% endif %}
-                            </div>
-                            <span class="badge bg-warning">待审批</span>
+            <div class="card-body card-body-scroll p-0">
+                {% for r in pending_page %}
+                <div id="reservation-{{ r.id }}" class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start mb-1">
+                        <div>
+                            <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
+                            <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
+                            <p class="mb-0 text-muted small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
+                            {% if r.purpose %}
+                            <p class="mb-0 text-muted small mt-1">用途：{{ r.purpose|truncatechars:40 }}</p>
+                            {% endif %}
                         </div>
-                        <div class="d-flex gap-2">
-                            <form method="post" action="{% url 'equipment:reservation_approve' r.pk %}"
-                                  hx-post="{% url 'equipment:reservation_approve' r.pk %}"
-                                  hx-target="#reservation-{{ r.id }}"
-                                  hx-swap="outerHTML">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-sm btn-success">批准</button>
-                            </form>
-                            <button class="btn btn-sm btn-danger"
-                                    onclick="showRejectModal({{ r.id }})">拒绝</button>
-                        </div>
+                        <span class="badge bg-warning">待审批</span>
                     </div>
-                    {% endfor %}
+                    <div class="d-flex gap-2">
+                        <form method="post" action="{% url 'equipment:reservation_approve' r.pk %}"
+                              hx-post="{% url 'equipment:reservation_approve' r.pk %}"
+                              hx-target="#reservation-{{ r.id }}"
+                              hx-swap="outerHTML">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-success">批准</button>
+                        </form>
+                        <button class="btn btn-sm btn-danger" onclick="showRejectModal({{ r.id }})">拒绝</button>
+                    </div>
                 </div>
-                {% else %}
+                {% empty %}
                 <p class="text-muted text-center py-4 mb-0">暂无待审批预约</p>
-                {% endif %}
+                {% endfor %}
             </div>
+            {% if pending_page.paginator.num_pages > 1 %}
+            <div class="card-footer py-2">
+                {% include "equipment/partials/pagination.html" with page=pending_page param_name="pending_page" %}
+            </div>
+            {% endif %}
         </div>
     </div>
 
     <div class="col-md-6">
-        <div class="card mb-4">
+        <div class="card dash-card mb-4">
             <div class="card-header bg-primary bg-opacity-10">
-                <h5 class="mb-0">✅ 已批准待领取 ({{ approved_reservations|length }})</h5>
+                <h5 class="mb-0">✅ 已批准待领取 ({{ approved_page.paginator.count }})</h5>
             </div>
-            <div class="card-body p-0">
-                {% if approved_reservations %}
-                <div class="list-group list-group-flush">
-                    {% for r in approved_reservations %}
-                    <div id="reservation-{{ r.id }}" class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div>
-                                <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
-                                <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
-                                <p class="mb-0 text-muted small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
-                                <p class="mb-0 text-muted small mt-1">
-                                    审批人：{{ r.approved_by.username|default:"-" }} ·
-                                    {{ r.approved_at|date:"m-d H:i" }}
-                                </p>
-                            </div>
-                            <span class="badge bg-primary">已批准</span>
+            <div class="card-body card-body-scroll p-0">
+                {% for r in approved_page %}
+                <div id="reservation-{{ r.id }}" class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start mb-1">
+                        <div>
+                            <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
+                            <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
+                            <p class="mb-0 text-muted small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
+                            <p class="mb-0 text-muted small mt-1">
+                                审批人：{{ r.approved_by.username|default:"-" }} ·
+                                {{ r.approved_at|date:"m-d H:i" }}
+                            </p>
                         </div>
-                        <form method="post" action="{% url 'equipment:reservation_pickup' r.pk %}"
-                              hx-post="{% url 'equipment:reservation_pickup' r.pk %}"
-                              hx-target="#reservation-{{ r.id }}"
-                              hx-swap="outerHTML">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-primary">登记领取</button>
-                        </form>
+                        <span class="badge bg-primary">已批准</span>
                     </div>
-                    {% endfor %}
+                    <form method="post" action="{% url 'equipment:reservation_pickup' r.pk %}"
+                          hx-post="{% url 'equipment:reservation_pickup' r.pk %}"
+                          hx-target="#reservation-{{ r.id }}"
+                          hx-swap="outerHTML">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-primary">登记领取</button>
+                    </form>
                 </div>
-                {% else %}
+                {% empty %}
                 <p class="text-muted text-center py-4 mb-0">暂无待领取预约</p>
-                {% endif %}
+                {% endfor %}
             </div>
+            {% if approved_page.paginator.num_pages > 1 %}
+            <div class="card-footer py-2">
+                {% include "equipment/partials/pagination.html" with page=approved_page param_name="approved_page" %}
+            </div>
+            {% endif %}
         </div>
 
-        <div class="card">
+        <div class="card dash-card">
             <div class="card-header bg-info bg-opacity-10">
-                <h5 class="mb-0">📦 已领取待归还 ({{ picked_reservations|length }})</h5>
+                <h5 class="mb-0">📦 已领取待归还 ({{ picked_page.paginator.count }})</h5>
             </div>
-            <div class="card-body p-0">
-                {% if picked_reservations %}
-                <div class="list-group list-group-flush">
-                    {% for r in picked_reservations %}
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div>
-                                <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
-                                <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
-                                <p class="mb-0 text-muted small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
-                                <p class="mb-0 text-muted small mt-1">领取时间：{{ r.picked_at|date:"m-d H:i" }}</p>
-                            </div>
-                            <span class="badge bg-info">已领取</span>
+            <div class="card-body card-body-scroll p-0">
+                {% for r in picked_page %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start mb-1">
+                        <div>
+                            <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
+                            <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
+                            <p class="mb-0 text-muted small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
+                            <p class="mb-0 text-muted small mt-1">领取时间：{{ r.picked_at|date:"m-d H:i" }}</p>
                         </div>
-                        <a href="{% url 'equipment:reservation_return' r.pk %}"
-                           class="btn btn-sm btn-outline-primary">登记归还</a>
+                        <span class="badge bg-info">已领取</span>
                     </div>
-                    {% endfor %}
+                    <a href="{% url 'equipment:reservation_return' r.pk %}"
+                       class="btn btn-sm btn-outline-primary">登记归还</a>
                 </div>
-                {% else %}
+                {% empty %}
                 <p class="text-muted text-center py-4 mb-0">暂无待归还预约</p>
-                {% endif %}
+                {% endfor %}
             </div>
+            {% if picked_page.paginator.num_pages > 1 %}
+            <div class="card-footer py-2">
+                {% include "equipment/partials/pagination.html" with page=picked_page param_name="picked_page" %}
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
 
 <div class="row g-4 mt-2">
     <div class="col-md-6">
-        <div class="card">
+        <div class="card dash-card">
             <div class="card-header bg-danger bg-opacity-10">
-                <h5 class="mb-0">⏰ 逾期记录 ({{ overdue_reservations|length }})</h5>
+                <h5 class="mb-0">⏰ 逾期记录 ({{ overdue_page.paginator.count }})</h5>
             </div>
-            <div class="card-body p-0">
-                {% if overdue_reservations %}
-                <div class="list-group list-group-flush">
-                    {% for r in overdue_reservations %}
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
-                                <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
-                                <p class="mb-0 text-danger small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
-                            </div>
-                            <div>
-                                <span class="badge bg-danger mb-2 d-block">已逾期</span>
-                                {% if r.status == 'overdue' and r.picked_at %}
-                                <a href="{% url 'equipment:reservation_return' r.pk %}"
-                                   class="btn btn-sm btn-outline-primary">登记归还</a>
-                                {% endif %}
-                            </div>
+            <div class="card-body card-body-scroll p-0">
+                {% for r in overdue_page %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-1">{{ r.equipment.name }} · {{ r.quantity }}件</h6>
+                            <p class="mb-1 text-muted small">预约人：{{ r.user.username }}</p>
+                            <p class="mb-0 text-danger small">{{ r.reservation_date }} {{ r.get_time_slot_display }}</p>
+                        </div>
+                        <div>
+                            <span class="badge bg-danger mb-2 d-block">已逾期</span>
+                            {% if r.status == 'overdue' and r.picked_at %}
+                            <a href="{% url 'equipment:reservation_return' r.pk %}"
+                               class="btn btn-sm btn-outline-primary">登记归还</a>
+                            {% endif %}
                         </div>
                     </div>
-                    {% endfor %}
                 </div>
-                {% else %}
+                {% empty %}
                 <p class="text-muted text-center py-4 mb-0">暂无逾期记录</p>
-                {% endif %}
+                {% endfor %}
             </div>
+            {% if overdue_page.paginator.num_pages > 1 %}
+            <div class="card-footer py-2">
+                {% include "equipment/partials/pagination.html" with page=overdue_page param_name="overdue_page" %}
+            </div>
+            {% endif %}
         </div>
     </div>
 
-    <div class="col-md-12">
-        <div class="card">
+    <div class="col-md-6">
+        <div class="card dash-card">
             <div class="card-header bg-info bg-opacity-10 d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">🔧 待处理损坏 ({{ pending_damages|length }})</h5>
+                <h5 class="mb-0">🔧 待处理损坏 ({{ damage_page.paginator.count }})</h5>
                 <a href="{% url 'equipment:damage_list' %}" class="btn btn-sm btn-outline-info">全部记录</a>
             </div>
-            <div class="card-body p-0">
-                {% if pending_damages %}
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead>
-                            <tr>
-                                <th>器材</th>
-                                <th>损坏数量</th>
-                                <th>上报人</th>
-                                <th>描述</th>
-                                <th>状态</th>
-                                <th>上报时间</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for d in pending_damages %}
-                            <tr>
-                                <td>{{ d.equipment.name }}</td>
-                                <td>{{ d.quantity }} 件</td>
-                                <td>{{ d.reported_by.username|default:"系统" }}</td>
-                                <td>{{ d.description|truncatechars:30 }}</td>
-                                <td>
-                                    <span class="badge bg-{% if d.status == 'reported' %}warning{% else %}info{% endif %}">
-                                        {{ d.get_status_display }}
-                                    </span>
-                                </td>
-                                <td>{{ d.created_at|date:"Y-m-d H:i" }}</td>
-                                <td>
-                                    <button class="btn btn-sm btn-primary"
-                                            onclick="showDamageProcessModal({{ d.id }}, '{{ d.equipment.name }}')">
-                                        处理
-                                    </button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+            <div class="card-body card-body-scroll p-0">
+                {% for d in damage_page %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">{{ d.equipment.name }} · {{ d.quantity }}件损坏</h6>
+                            <p class="mb-0 text-muted small">{{ d.description|truncatechars:40 }}</p>
+                            <p class="mb-0 text-muted small">
+                                上报人：{{ d.reported_by.username|default:"系统" }} ·
+                                {{ d.created_at|date:"m-d H:i" }}
+                            </p>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-{% if d.status == 'reported' %}warning{% else %}info{% endif %} mb-1">
+                                {{ d.get_status_display }}
+                            </span>
+                            <br>
+                            <button class="btn btn-sm btn-primary mt-1"
+                                    onclick="showDamageProcessModal({{ d.id }}, '{{ d.equipment.name }}')">
+                                处理
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                {% else %}
+                {% empty %}
                 <p class="text-muted text-center py-4 mb-0">暂无待处理的损坏记录</p>
-                {% endif %}
+                {% endfor %}
             </div>
+            {% if damage_page.paginator.num_pages > 1 %}
+            <div class="card-footer py-2">
+                {% include "equipment/partials/pagination.html" with page=damage_page param_name="damage_page" %}
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

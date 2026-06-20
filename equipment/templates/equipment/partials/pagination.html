@@ -1,0 +1,37 @@
+{% if page.paginator.num_pages > 1 %}
+<nav aria-label="分页">
+  <ul class="pagination pagination-sm mb-0 justify-content-center">
+    {% if page.has_previous %}
+    <li class="page-item">
+      <a class="page-link" href="?{{ param_name }}={{ page.previous_page_number }}{% for k, v in request.GET.items %}{% if k != param_name %}&{{ k }}={{ v }}{% endif %}{% endfor %}">‹</a>
+    </li>
+    {% else %}
+    <li class="page-item disabled"><span class="page-link">‹</span></li>
+    {% endif %}
+
+    {% for num in page.paginator.page_range %}
+      {% if num == page.number %}
+      <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+      {% elif num >= page.number|add:"-2" and num <= page.number|add:"2" %}
+      <li class="page-item">
+        <a class="page-link" href="?{{ param_name }}={{ num }}{% for k, v in request.GET.items %}{% if k != param_name %}&{{ k }}={{ v }}{% endif %}{% endfor %}">{{ num }}</a>
+      </li>
+      {% elif num == 1 or num == page.paginator.num_pages %}
+      <li class="page-item">
+        <a class="page-link" href="?{{ param_name }}={{ num }}{% for k, v in request.GET.items %}{% if k != param_name %}&{{ k }}={{ v }}{% endif %}{% endfor %}">{{ num }}</a>
+      </li>
+      {% elif num == page.number|add:"-3" or num == page.number|add:"3" %}
+      <li class="page-item disabled"><span class="page-link">…</span></li>
+      {% endif %}
+    {% endfor %}
+
+    {% if page.has_next %}
+    <li class="page-item">
+      <a class="page-link" href="?{{ param_name }}={{ page.next_page_number }}{% for k, v in request.GET.items %}{% if k != param_name %}&{{ k }}={{ v }}{% endif %}{% endfor %}">›</a>
+    </li>
+    {% else %}
+    <li class="page-item disabled"><span class="page-link">›</span></li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
