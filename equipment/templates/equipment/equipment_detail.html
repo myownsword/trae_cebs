@@ -1,0 +1,230 @@
+{% extends 'equipment/base.html' %}
+
+{% block title %}{{ equipment.name }} - 器材详情{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'equipment:home' %}">首页</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'equipment:equipment_list' %}">器材列表</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ equipment.name }}</li>
+    </ol>
+</nav>
+
+<div class="row g-4">
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">{{ equipment.name }}</h3>
+                {% if equipment.category %}
+                <span class="badge bg-light text-dark mb-3">{{ equipment.category }}</span>
+                {% endif %}
+                <p class="card-text">{{ equipment.description|default:"暂无描述" }}</p>
+                
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">总库存</span>
+                        <span class="fw-bold">{{ equipment.total_quantity }} 件</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">可用数量</span>
+                        <span class="fw-bold text-primary">{{ equipment.available_quantity }} 件</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">状态</span>
+                        <span class="badge bg-{% if equipment.status == 'damaged' %}danger{% else %}success{% endif %}">
+                            {{ equipment.get_status_display }}
+                        </span>
+                    </div>
+                </div>
+
+                {% if equipment.status == 'damaged' %}
+                <div class="alert alert-danger">
+                    <strong>注意：</strong>该器材已全部损坏，暂不可预约
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">上报损坏</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% url 'equipment:damage_report' equipment.pk %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">损坏数量</label>
+                        <input type="number" name="quantity" class="form-control" min="1" max="{{ equipment.available_quantity }}" value="1" {% if equipment.status == 'damaged' %}disabled{% endif %}>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">损坏描述</label>
+                        <textarea name="description" class="form-control" rows="2" required {% if equipment.status == 'damaged' %}disabled{% endif %}></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-warning w-100" {% if equipment.status == 'damaged' %}disabled{% endif %}>
+                        上报损坏
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">📅 可预约时段（未来7天）</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th>星期</th>
+                                <th>上午可用</th>
+                                <th>下午可用</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for day in availability %}
+                            <tr>
+                                <td>{{ day.date }}</td>
+                                <td>{{ day.weekday }}</td>
+                                <td>
+                                    {% if day.morning > 0 %}
+                                    <span class="badge bg-success">{{ day.morning }}</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">已满</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if day.afternoon > 0 %}
+                                    <span class="badge bg-success">{{ day.afternoon }}</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">已满</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if equipment.status != 'damaged' %}
+                                    <button class="btn btn-sm btn-outline-primary" 
+                                            data-date='{{ day.date|date:"Y-m-d" }}'
+                                            onclick="openReserveModal(this.getAttribute('data-date'), 'morning', {{ day.morning }})"
+                                            {% if day.morning <= 0 %}disabled{% endif %}>
+                                        约上午
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary" 
+                                            data-date='{{ day.date|date:"Y-m-d" }}'
+                                            onclick="openReserveModal(this.getAttribute('data-date'), 'afternoon', {{ day.afternoon }})"
+                                            {% if day.afternoon <= 0 %}disabled{% endif %}>
+                                        约下午
+                                    </button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">我的预约记录</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if my_reservations %}
+                <div class="list-group list-group-flush">
+                    {% for r in my_reservations %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">{{ r.reservation_date }} {{ r.get_time_slot_display }}</h6>
+                                <p class="mb-0 text-muted small">数量：{{ r.quantity }} 件</p>
+                            </div>
+                            <span class="badge bg-{% if r.status == 'pending' %}warning{% elif r.status == 'approved' %}primary{% elif r.status == 'returned' %}success{% elif r.status == 'cancelled' or r.status == 'rejected' %}secondary{% elif r.status == 'overdue' %}danger{% else %}info{% endif %}">
+                                {{ r.get_status_display }}
+                            </span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center py-3 mb-0">暂无预约记录</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="reserveModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">预约 {{ equipment.name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'equipment:reservation_create' equipment.pk %}"
+                  hx-post="{% url 'equipment:reservation_create' equipment.pk %}"
+                  hx-target="#modalResult">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div id="modalResult"></div>
+                    <div class="mb-3">
+                        <label class="form-label">预约日期</label>
+                        <input type="date" name="reservation_date" id="modalDate" class="form-control" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">时段</label>
+                        <input type="text" id="modalTimeSlotText" class="form-control" readonly>
+                        <input type="hidden" name="time_slot" id="modalTimeSlot">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">预约数量</label>
+                        <input type="number" name="quantity" id="modalQuantity" class="form-control" min="1" value="1">
+                        <div class="form-text">当前时段最多可借 <span id="modalMaxQty">0</span> 件</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">用途说明</label>
+                        <textarea name="purpose" class="form-control" rows="2" placeholder="请说明使用用途..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">提交预约</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openReserveModal(date, timeSlot, maxQty) {
+    document.getElementById('modalDate').value = date;
+    document.getElementById('modalTimeSlot').value = timeSlot;
+    document.getElementById('modalTimeSlotText').value = timeSlot === 'morning' ? '上午 (8:00-12:00)' : '下午 (14:00-18:00)';
+    document.getElementById('modalQuantity').max = maxQty;
+    document.getElementById('modalQuantity').value = 1;
+    document.getElementById('modalMaxQty').textContent = maxQty;
+    document.getElementById('modalResult').innerHTML = '';
+    
+    const modal = new bootstrap.Modal(document.getElementById('reserveModal'));
+    modal.show();
+}
+
+document.body.addEventListener('htmx:afterRequest', function(event) {
+    if (event.detail.successful) {
+        const result = document.getElementById('modalResult');
+        if (result && result.querySelector('.alert-success')) {
+            setTimeout(function() {
+                location.reload();
+            }, 1000);
+        }
+    }
+});
+</script>
+{% endblock %}

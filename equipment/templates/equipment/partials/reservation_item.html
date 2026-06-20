@@ -1,0 +1,28 @@
+<div class="list-group-item">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+        <div>
+            <h6 class="mb-1">{{ reservation.equipment.name }} · {{ reservation.quantity }}件</h6>
+            <p class="mb-1 text-muted small">
+                预约人：{{ reservation.user.username }}
+            </p>
+            <p class="mb-0 text-muted small">
+                {{ reservation.reservation_date }} {{ reservation.get_time_slot_display }}
+            </p>
+        </div>
+        <span class="badge bg-{% if reservation.status == 'pending' %}warning{% elif reservation.status == 'approved' %}primary{% elif reservation.status == 'returned' %}success{% elif reservation.status == 'cancelled' or reservation.status == 'rejected' %}secondary{% elif reservation.status == 'overdue' %}danger{% else %}info{% endif %}">
+            {{ reservation.get_status_display }}
+        </span>
+    </div>
+    {% if reservation.status == 'pending' %}
+    <div class="d-flex gap-2">
+        <form method="post" 
+              hx-post="{% url 'equipment:reservation_approve' reservation.pk %}"
+              hx-target="closest .list-group-item"
+              hx-swap="outerHTML">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-success">批准</button>
+        </form>
+        <button class="btn btn-sm btn-danger" onclick="showRejectModal({{ reservation.id }})">拒绝</button>
+    </div>
+    {% endif %}
+</div>

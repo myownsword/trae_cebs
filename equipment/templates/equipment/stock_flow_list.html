@@ -1,0 +1,78 @@
+{% extends 'equipment/base.html' %}
+
+{% block title %}库存流水 - 社区共享器材预约系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>📊 库存流水</h2>
+    <div>
+        <select class="form-select d-inline-block" style="width:auto;" onchange="location.href='?equipment=' + this.value">
+            <option value="">全部器材</option>
+            {% for eq in equipments %}
+            <option value="{{ eq.id }}" {% if current_equipment == eq.id|stringformat:"i" %}selected{% endif %}>{{ eq.name }}</option>
+            {% endfor %}
+        </select>
+        <a href="{% url 'equipment:export_stock_csv' %}{% if current_equipment %}?equipment={{ current_equipment }}{% endif %}" 
+           class="btn btn-success ms-2">
+            导出 CSV
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if flows %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>器材</th>
+                        <th>类型</th>
+                        <th>原因</th>
+                        <th>数量</th>
+                        <th>变动后库存</th>
+                        <th>操作人</th>
+                        <th>关联预约</th>
+                        <th>备注</th>
+                        <th>时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for f in flows %}
+                    <tr>
+                        <td>#{{ f.id }}</td>
+                        <td>{{ f.equipment.name }}</td>
+                        <td>
+                            <span class="badge bg-{% if f.flow_type == 'in' %}success{% else %}danger{% endif %}">
+                                {{ f.get_flow_type_display }}
+                            </span>
+                        </td>
+                        <td>{{ f.get_flow_reason_display }}</td>
+                        <td>
+                            {% if f.flow_type == 'in' %}+{% else %}-{% endif %}{{ f.quantity }}
+                        </td>
+                        <td>{{ f.balance_after }}</td>
+                        <td>{{ f.operator.username|default:"系统" }}</td>
+                        <td>
+                            {% if f.reservation_id %}
+                            #{{ f.reservation_id }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>{{ f.note|truncatechars:20|default:"-" }}</td>
+                        <td>{{ f.created_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <p class="text-muted">暂无库存流水记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

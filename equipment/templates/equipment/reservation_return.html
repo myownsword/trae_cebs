@@ -1,0 +1,80 @@
+{% extends 'equipment/base.html' %}
+
+{% block title %}登记归还 - 社区共享器材预约系统{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'equipment:admin_dashboard' %}">管理后台</a></li>
+        <li class="breadcrumb-item active" aria-current="page">登记归还</li>
+    </ol>
+</nav>
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">登记归还</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-4">
+                    <h6>预约信息</h6>
+                    <dl class="row">
+                        <dt class="col-sm-4">器材名称</dt>
+                        <dd class="col-sm-8">{{ reservation.equipment.name }}</dd>
+                        <dt class="col-sm-4">预约人</dt>
+                        <dd class="col-sm-8">{{ reservation.user.username }}</dd>
+                        <dt class="col-sm-4">预约日期</dt>
+                        <dd class="col-sm-8">{{ reservation.reservation_date }}</dd>
+                        <dt class="col-sm-4">时段</dt>
+                        <dd class="col-sm-8">{{ reservation.get_time_slot_display }}</dd>
+                        <dt class="col-sm-4">数量</dt>
+                        <dd class="col-sm-8">{{ reservation.quantity }} 件</dd>
+                        <dt class="col-sm-4">当前状态</dt>
+                        <dd class="col-sm-8">
+                            <span class="badge bg-{% if reservation.status == 'overdue' %}danger{% else %}info{% endif %}">
+                                {{ reservation.get_status_display }}
+                            </span>
+                        </dd>
+                    </dl>
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">归还备注</label>
+                        <textarea name="note" class="form-control" rows="2" placeholder="选填，描述归还时的状态..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_damaged" id="isDamaged" onchange="toggleDamageDesc()">
+                            <label class="form-check-label" for="isDamaged">
+                                器材有损坏
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3" id="damageDescGroup" style="display:none;">
+                        <label class="form-label">损坏描述</label>
+                        <textarea name="damage_description" class="form-control" rows="2" placeholder="请描述损坏情况..."></textarea>
+                        <div class="form-text">损坏的器材不会重新放回可借库存</div>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">确认归还</button>
+                        <a href="{% url 'equipment:admin_dashboard' %}" class="btn btn-outline-secondary">取消</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleDamageDesc() {
+    const checkbox = document.getElementById('isDamaged');
+    const group = document.getElementById('damageDescGroup');
+    group.style.display = checkbox.checked ? 'block' : 'none';
+}
+</script>
+{% endblock %}

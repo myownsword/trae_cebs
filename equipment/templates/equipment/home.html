@@ -1,0 +1,178 @@
+{% extends 'equipment/base.html' %}
+
+{% block title %}首页 - 社区共享器材预约系统{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary card-hover h-100">
+            <div class="card-body">
+                <h5 class="card-title">器材总数</h5>
+                <h2 class="card-text">{{ total_equipments }}</h2>
+                <p class="card-text small opacity-75">种器材可供借用</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning card-hover h-100">
+            <div class="card-body">
+                <h5 class="card-title">待审批</h5>
+                <h2 class="card-text">{{ pending_count }}</h2>
+                <p class="card-text small opacity-75">条预约等待审批</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-danger card-hover h-100">
+            <div class="card-body">
+                <h5 class="card-title">逾期提醒</h5>
+                <h2 class="card-text">{{ overdue_count }}</h2>
+                <p class="card-text small opacity-75">条预约已逾期</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info card-hover h-100">
+            <div class="card-body">
+                <h5 class="card-title">待处理损坏</h5>
+                <h2 class="card-text">{{ damage_pending_count }}</h2>
+                <p class="card-text small opacity-75">条损坏记录待处理</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">🔥 本周借用热度</h5>
+                <a href="{% url 'equipment:equipment_list' %}" class="btn btn-sm btn-outline-primary">查看全部</a>
+            </div>
+            <div class="card-body">
+                {% if weekly_heat %}
+                    {% for item in weekly_heat %}
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="fw-medium">{{ item.equipment__name }}</span>
+                                <span class="text-primary">{{ item.total }} 件次</span>
+                            </div>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar progress-bar-striped" 
+                                     style="width: {% widthratio item.total weekly_heat.0.total 100 %}%;">
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted text-center py-4">本周暂无借用记录</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">⏰ 逾期提醒</h5>
+                {% if user.is_staff %}
+                <a href="{% url 'equipment:admin_dashboard' %}" class="btn btn-sm btn-outline-danger">处理</a>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                {% if overdue_list %}
+                    <div class="list-group list-group-flush">
+                        {% for r in overdue_list %}
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="mb-1">{{ r.equipment.name }}</h6>
+                                        <p class="mb-1 text-muted small">
+                                            预约人：{{ r.user.username }}
+                                        </p>
+                                        <p class="mb-0 text-danger small">
+                                            {{ r.reservation_date }} {{ r.get_time_slot_display }}
+                                        </p>
+                                    </div>
+                                    <span class="badge bg-danger">已逾期</span>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted text-center py-4">暂无逾期记录</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-2">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">🔧 损坏处理</h5>
+                <a href="{% url 'equipment:damage_list' %}" class="btn btn-sm btn-outline-warning">全部记录</a>
+            </div>
+            <div class="card-body p-0">
+                {% if pending_damages %}
+                    <div class="list-group list-group-flush">
+                        {% for d in pending_damages %}
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="mb-1">{{ d.equipment.name }}</h6>
+                                        <p class="mb-1 text-muted small">
+                                            损坏数量：{{ d.quantity }} 件
+                                        </p>
+                                        <p class="mb-0 text-muted small">
+                                            上报人：{{ d.reported_by.username|default:"系统" }}
+                                        </p>
+                                    </div>
+                                    <span class="badge bg-{% if d.status == 'reported' %}warning{% else %}info{% endif %}">
+                                        {{ d.get_status_display }}
+                                    </span>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted text-center py-4">暂无待处理的损坏记录</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">📋 我的预约</h5>
+                <a href="{% url 'equipment:reservation_list' %}" class="btn btn-sm btn-outline-primary">全部</a>
+            </div>
+            <div class="card-body p-0">
+                {% if my_reservations %}
+                    <div class="list-group list-group-flush">
+                        {% for r in my_reservations %}
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="mb-1">{{ r.equipment.name }}</h6>
+                                        <p class="mb-0 text-muted small">
+                                            {{ r.reservation_date }} {{ r.get_time_slot_display }} · {{ r.quantity }}件
+                                        </p>
+                                    </div>
+                                    <span class="badge bg-{% if r.status == 'pending' %}warning{% elif r.status == 'approved' %}primary{% elif r.status == 'returned' %}success{% elif r.status == 'cancelled' or r.status == 'rejected' %}secondary{% elif r.status == 'overdue' %}danger{% else %}info{% endif %}">
+                                        {{ r.get_status_display }}
+                                    </span>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted text-center py-4">暂无预约记录</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

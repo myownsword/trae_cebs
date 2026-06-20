@@ -1,0 +1,10 @@
+<div class="alert alert-success">
+    <strong>预约成功！</strong>
+    <p class="mb-1">您已成功预约 {{ equipment.name }} {{ reservation.quantity }} 件</p>
+    <p class="mb-0 small">
+        {{ reservation.reservation_date }} {{ reservation.get_time_slot_display }}
+    </p>
+    <p class="mb-0 small text-muted">
+        预约状态：{{ reservation.get_status_display }}
+    </p>
+</div>

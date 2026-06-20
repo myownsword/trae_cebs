@@ -1,0 +1,87 @@
+{% extends 'equipment/base.html' %}
+
+{% block title %}我的预约 - 社区共享器材预约系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>📋 预约记录</h2>
+    <div class="btn-group">
+        <a href="{% url 'equipment:reservation_list' %}" 
+           class="btn btn-outline-primary {% if not current_status %}active{% endif %}">
+            全部
+        </a>
+        {% for value, label in status_choices %}
+        <a href="{% url 'equipment:reservation_list' %}?status={{ value }}" 
+           class="btn btn-outline-primary {% if current_status == value %}active{% endif %}">
+            {{ label }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if reservations %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>器材</th>
+                        {% if not request.GET.my or request.GET.my == '0' %}
+                        <th>预约人</th>
+                        {% endif %}
+                        <th>日期</th>
+                        <th>时段</th>
+                        <th>数量</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in reservations %}
+                    <tr>
+                        <td>#{{ r.id }}</td>
+                        <td>{{ r.equipment.name }}</td>
+                        {% if not request.GET.my or request.GET.my == '0' %}
+                        <td>{{ r.user.username }}</td>
+                        {% endif %}
+                        <td>{{ r.reservation_date }}</td>
+                        <td>{{ r.get_time_slot_display }}</td>
+                        <td>{{ r.quantity }}</td>
+                        <td>
+                            <span class="badge bg-{% if r.status == 'pending' %}warning{% elif r.status == 'approved' %}primary{% elif r.status == 'returned' %}success{% elif r.status == 'cancelled' or r.status == 'rejected' %}secondary{% elif r.status == 'overdue' %}danger{% else %}info{% endif %}">
+                                {{ r.get_status_display }}
+                            </span>
+                        </td>
+                        <td>{{ r.created_at|date:"Y-m-d H:i" }}</td>
+                        <td>
+                            {% if r.status == 'pending' or r.status == 'approved' %}
+                            <form method="post" action="{% url 'equipment:reservation_cancel' r.pk %}" 
+                                  style="display:inline;"
+                                  hx-post="{% url 'equipment:reservation_cancel' r.pk %}"
+                                  hx-target="closest tr"
+                                  hx-swap="outerHTML">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-danger" 
+                                        onclick="return confirm('确定要取消该预约吗？')">
+                                    取消
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <p class="text-muted">暂无预约记录</p>
+            <a href="{% url 'equipment:equipment_list' %}" class="btn btn-primary">去预约</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

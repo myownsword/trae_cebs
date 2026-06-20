@@ -1,0 +1,126 @@
+{% extends 'equipment/base.html' %}
+
+{% block title %}损坏记录 - 社区共享器材预约系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>🔧 损坏记录</h2>
+    <div class="btn-group">
+        <a href="{% url 'equipment:damage_list' %}" 
+           class="btn btn-outline-primary {% if not current_status %}active{% endif %}">
+            全部
+        </a>
+        {% for value, label in status_choices %}
+        <a href="{% url 'equipment:damage_list' %}?status={{ value }}" 
+           class="btn btn-outline-primary {% if current_status == value %}active{% endif %}">
+            {{ label }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if damages %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>器材</th>
+                        <th>损坏数量</th>
+                        <th>上报人</th>
+                        <th>描述</th>
+                        <th>状态</th>
+                        <th>处理人</th>
+                        <th>上报时间</th>
+                        {% if user.is_staff %}
+                        <th>操作</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in damages %}
+                    <tr>
+                        <td>#{{ d.id }}</td>
+                        <td>{{ d.equipment.name }}</td>
+                        <td>{{ d.quantity }} 件</td>
+                        <td>{{ d.reported_by.username|default:"系统" }}</td>
+                        <td>{{ d.description|truncatechars:30 }}</td>
+                        <td>
+                            <span class="badge bg-{% if d.status == 'reported' %}warning{% elif d.status == 'processing' %}info{% else %}success{% endif %}">
+                                {{ d.get_status_display }}
+                            </span>
+                        </td>
+                        <td>{{ d.handled_by.username|default:"-" }}</td>
+                        <td>{{ d.created_at|date:"Y-m-d H:i" }}</td>
+                        {% if user.is_staff and d.status != 'resolved' %}
+                        <td>
+                            <button class="btn btn-sm btn-primary" 
+                                    onclick="showProcessModal({{ d.id }}, '{{ d.equipment.name }}')">
+                                处理
+                            </button>
+                        </td>
+                        {% else %}
+                        <td>-</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <p class="text-muted">暂无损坏记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if user.is_staff %}
+<div class="modal fade" id="processModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">处理损坏记录 - <span id="damageName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" id="processForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">处理备注</label>
+                        <textarea name="handle_note" class="form-control" rows="3" placeholder="请输入处理备注..."></textarea>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="mark_resolved" id="markResolved" checked>
+                        <label class="form-check-label" for="markResolved">
+                            标记为已处理
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">提交</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+{% if user.is_staff %}
+<script>
+function showProcessModal(id, name) {
+    document.getElementById('damageName').textContent = name;
+    const form = document.getElementById('processForm');
+    form.action = "{% url 'equipment:damage_process' 0 %}".replace('0', id);
+    const modal = new bootstrap.Modal(document.getElementById('processModal'));
+    modal.show();
+}
+</script>
+{% endif %}
+{% endblock %}

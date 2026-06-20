@@ -1,0 +1,53 @@
+{% extends 'equipment/base.html' %}
+
+{% block title %}审计记录 - 社区共享器材预约系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>📝 审计记录</h2>
+    <span class="text-muted">最近 100 条</span>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if logs %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>操作人</th>
+                        <th>操作</th>
+                        <th>目标类型</th>
+                        <th>目标ID</th>
+                        <th>详情</th>
+                        <th>IP地址</th>
+                        <th>时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td>#{{ log.id }}</td>
+                        <td>{{ log.user.username|default:"系统" }}</td>
+                        <td>
+                            <span class="badge bg-primary">{{ log.get_action_display }}</span>
+                        </td>
+                        <td>{{ log.target_type }}</td>
+                        <td>#{{ log.target_id }}</td>
+                        <td>{{ log.details|truncatechars:50 }}</td>
+                        <td>{{ log.ip_address|default:"-" }}</td>
+                        <td>{{ log.created_at|date:"Y-m-d H:i:s" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <p class="text-muted">暂无审计记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

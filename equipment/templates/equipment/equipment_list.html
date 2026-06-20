@@ -1,0 +1,68 @@
+{% extends 'equipment/base.html' %}
+
+{% block title %}器材列表 - 社区共享器材预约系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>📦 器材列表</h2>
+    <form class="d-flex" method="get" action="">
+        <input type="text" name="search" class="form-control me-2" placeholder="搜索器材..." value="{{ search }}">
+        <button class="btn btn-outline-primary" type="submit">搜索</button>
+    </form>
+</div>
+
+{% if categories %}
+<div class="mb-4">
+    <div class="btn-group" role="group">
+        <a href="{% url 'equipment:equipment_list' %}" 
+           class="btn btn-outline-primary {% if not current_category %}active{% endif %}">
+            全部
+        </a>
+        {% for cat in categories %}
+        <a href="{% url 'equipment:equipment_list' %}?category={{ cat }}" 
+           class="btn btn-outline-primary {% if current_category == cat %}active{% endif %}">
+            {{ cat }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    {% for eq in equipments %}
+    <div class="col-md-4">
+        <div class="card h-100 card-hover">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h5 class="card-title mb-0">{{ eq.name }}</h5>
+                    {% if eq.status == 'damaged' %}
+                    <span class="badge bg-danger">全部损坏</span>
+                    {% else %}
+                    <span class="badge bg-success">可预约</span>
+                    {% endif %}
+                </div>
+                {% if eq.category %}
+                <span class="badge bg-light text-dark mb-2">{{ eq.category }}</span>
+                {% endif %}
+                <p class="card-text text-muted small">{{ eq.description|default:"暂无描述"|truncatechars:100 }}</p>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-primary fw-bold">{{ eq.available_quantity }}</span>
+                        <span class="text-muted">/ {{ eq.total_quantity }} 可借</span>
+                    </div>
+                    <a href="{% url 'equipment:equipment_detail' eq.pk %}" class="btn btn-primary btn-sm">
+                        查看详情
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="text-center py-5">
+            <p class="text-muted">暂无器材数据</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
