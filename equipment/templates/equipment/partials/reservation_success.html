@@ -1,3 +1,15 @@
+{% if waitlist_entry %}
+<div class="alert alert-warning">
+    <strong>已加入候补！</strong>
+    <p class="mb-1">您已成功加入 {{ equipment.name }} 候补队列</p>
+    <p class="mb-0 small">
+        {{ waitlist_entry.reservation_date }} {{ waitlist_entry.get_time_slot_display }} · {{ waitlist_entry.quantity }} 件
+    </p>
+    <p class="mb-0 small text-muted">
+        排队位置：第 {{ waitlist_entry.queue_position }} 位
+    </p>
+</div>
+{% else %}
 <div class="alert alert-success">
     <strong>预约成功！</strong>
     <p class="mb-1">您已成功预约 {{ equipment.name }} {{ reservation.quantity }} 件</p>
@@ -8,3 +20,4 @@
         预约状态：{{ reservation.get_status_display }}
     </p>
 </div>
+{% endif %}

@@ -105,6 +105,47 @@ class Reservation(models.Model):
         return False
 
 
+class WaitlistEntry(models.Model):
+    STATUS_WAITING = 'waiting'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_PROMOTED = 'promoted'
+    STATUS_REJECTED = 'rejected'
+    STATUS_SKIPPED = 'skipped'
+    STATUS_CHOICES = [
+        (STATUS_WAITING, '等待中'),
+        (STATUS_CANCELLED, '已取消'),
+        (STATUS_PROMOTED, '已转预约'),
+        (STATUS_REJECTED, '已拒绝'),
+        (STATUS_SKIPPED, '已跳过'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='申请人', related_name='waitlist_entries')
+    equipment = models.ForeignKey(Equipment, on_delete=models.CASCADE, verbose_name='器材', related_name='waitlist_entries')
+    reservation_date = models.DateField('预约日期')
+    time_slot = models.CharField('时段', max_length=20, choices=Reservation.TIME_SLOT_CHOICES)
+    quantity = models.IntegerField('数量', default=1)
+    queue_position = models.IntegerField('排队顺序')
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default=STATUS_WAITING)
+    reject_reason = models.TextField('拒绝原因', blank=True)
+    promoted_reservation = models.ForeignKey(
+        Reservation, on_delete=models.SET_NULL, null=True, blank=True,
+        verbose_name='转为的预约', related_name='from_waitlist'
+    )
+    created_at = models.DateTimeField('创建时间', default=timezone.now)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '候补记录'
+        verbose_name_plural = '候补记录'
+        ordering = ['queue_position']
+        indexes = [
+            models.Index(fields=['equipment', 'reservation_date', 'time_slot', 'status']),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} - {self.equipment.name} - {self.reservation_date} (#{self.queue_position})'
+
+
 class DamageRecord(models.Model):
     STATUS_REPORTED = 'reported'
     STATUS_PROCESSING = 'processing'
@@ -146,6 +187,11 @@ class AuditLog(models.Model):
     ACTION_RETURN = 'return'
     ACTION_DAMAGE = 'damage'
     ACTION_OVERDUE = 'overdue'
+    ACTION_WAITLIST_CREATE = 'waitlist_create'
+    ACTION_WAITLIST_CANCEL = 'waitlist_cancel'
+    ACTION_WAITLIST_PROMOTE = 'waitlist_promote'
+    ACTION_WAITLIST_SKIP = 'waitlist_skip'
+    ACTION_WAITLIST_REJECT = 'waitlist_reject'
     ACTION_CHOICES = [
         (ACTION_CREATE, '创建'),
         (ACTION_UPDATE, '更新'),
@@ -157,6 +203,11 @@ class AuditLog(models.Model):
         (ACTION_RETURN, '归还'),
         (ACTION_DAMAGE, '损坏'),
         (ACTION_OVERDUE, '逾期'),
+        (ACTION_WAITLIST_CREATE, '候补创建'),
+        (ACTION_WAITLIST_CANCEL, '候补取消'),
+        (ACTION_WAITLIST_PROMOTE, '候补转预约'),
+        (ACTION_WAITLIST_SKIP, '候补跳过'),
+        (ACTION_WAITLIST_REJECT, '候补拒绝'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name='操作人')

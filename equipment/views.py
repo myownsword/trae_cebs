@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from django.contrib import messages
 
-from .models import Equipment, Reservation, DamageRecord, StockFlow, AuditLog
+from .models import Equipment, Reservation, DamageRecord, StockFlow, AuditLog, WaitlistEntry
 from .services import (
     ReservationError,
     create_reservation,
@@ -34,6 +34,11 @@ from .services import (
     adjust_equipment_stock,
     set_equipment_offline,
     set_equipment_online,
+    create_waitlist_entry,
+    cancel_waitlist_entry,
+    skip_waitlist_entry,
+    reject_waitlist_entry,
+    promote_waitlist_entry,
 )
 
 
@@ -153,6 +158,7 @@ def reservation_create(request, pk):
     time_slot = request.POST.get('time_slot')
     quantity = int(request.POST.get('quantity', 1))
     purpose = request.POST.get('purpose', '')
+    join_waitlist = request.POST.get('join_waitlist') == '1'
 
     try:
         reservation = create_reservation(
@@ -173,11 +179,44 @@ def reservation_create(request, pk):
         messages.success(request, '预约提交成功，等待管理员审批')
         return redirect('equipment:reservation_list')
     except ReservationError as e:
+        error_msg = str(e)
+        if join_waitlist and '库存不足' in error_msg:
+            try:
+                entry = create_waitlist_entry(
+                    user=request.user,
+                    equipment=equipment,
+                    reservation_date=reservation_date,
+                    time_slot=time_slot,
+                    quantity=quantity,
+                    request=request,
+                )
+                success_msg = f'已加入候补队列，排队位置：第 {entry.queue_position} 位'
+                if request.headers.get('HX-Request'):
+                    messages.success(request, success_msg)
+                    return render(request, 'equipment/partials/reservation_success.html', {
+                        'equipment': equipment,
+                        'waitlist_entry': entry,
+                    })
+                messages.success(request, success_msg)
+                return redirect('equipment:reservation_list')
+            except ReservationError as we:
+                if request.headers.get('HX-Request'):
+                    return render(request, 'equipment/partials/error_alert.html', {
+                        'message': str(we),
+                    }, status=400)
+                messages.error(request, str(we))
+                return redirect('equipment:equipment_detail', pk=pk)
+
         if request.headers.get('HX-Request'):
             return render(request, 'equipment/partials/error_alert.html', {
-                'message': str(e),
+                'message': error_msg,
+                'show_waitlist': '库存不足' in error_msg,
+                'equipment_pk': pk,
+                'reservation_date': reservation_date,
+                'time_slot': time_slot,
+                'quantity': quantity,
             }, status=400)
-        messages.error(request, str(e))
+        messages.error(request, error_msg)
         return redirect('equipment:equipment_detail', pk=pk)
 
 
@@ -196,10 +235,15 @@ def reservation_list(request):
 
     reservations = reservations.order_by('-created_at')
 
+    my_waitlist = WaitlistEntry.objects.filter(
+        user=request.user
+    ).select_related('equipment').order_by('-created_at')
+
     context = {
         'reservations': reservations,
         'current_status': status,
         'status_choices': Reservation.STATUS_CHOICES,
+        'my_waitlist': my_waitlist,
     }
     return render(request, 'equipment/reservation_list.html', context)
 
@@ -249,11 +293,16 @@ def admin_dashboard(request):
     overdue_qs = get_overdue_reservations()
     damage_qs = get_pending_damages()
 
+    waitlist_qs = WaitlistEntry.objects.filter(
+        status=WaitlistEntry.STATUS_WAITING
+    ).select_related('user', 'equipment').order_by('queue_position')
+
     pending_paginator = Paginator(pending_qs, per_page)
     approved_paginator = Paginator(approved_qs, per_page)
     picked_paginator = Paginator(picked_qs, per_page)
     overdue_paginator = Paginator(overdue_qs, per_page)
     damage_paginator = Paginator(damage_qs, per_page)
+    waitlist_paginator = Paginator(waitlist_qs, per_page)
 
     try:
         pending_page = pending_paginator.page(int(request.GET.get('pending_page', 1)))
@@ -280,6 +329,11 @@ def admin_dashboard(request):
     except (EmptyPage, ValueError):
         damage_page = damage_paginator.page(damage_paginator.num_pages)
 
+    try:
+        waitlist_page = waitlist_paginator.page(int(request.GET.get('waitlist_page', 1)))
+    except (EmptyPage, ValueError):
+        waitlist_page = waitlist_paginator.page(waitlist_paginator.num_pages)
+
     equipment_stats = {
         'total': Equipment.objects.count(),
         'normal': Equipment.objects.filter(status=Equipment.STATUS_NORMAL).count(),
@@ -295,6 +349,7 @@ def admin_dashboard(request):
         'picked_page': picked_page,
         'overdue_page': overdue_page,
         'damage_page': damage_page,
+        'waitlist_page': waitlist_page,
         'equipment_stats': equipment_stats,
     }
     return render(request, 'equipment/admin_dashboard.html', context)
@@ -745,3 +800,83 @@ def admin_equipment_adjust_stock(request, pk):
 
     equipment.occupied_quantity = get_equipment_occupied_quantity(equipment)
     return render(request, 'equipment/admin_equipment_adjust.html', {'equipment': equipment})
+
+
+@login_required
+@require_http_methods(['POST'])
+def waitlist_join(request, pk):
+    equipment = get_object_or_404(Equipment, pk=pk)
+    reservation_date = request.POST.get('reservation_date')
+    time_slot = request.POST.get('time_slot')
+    quantity = int(request.POST.get('quantity', 1))
+
+    try:
+        entry = create_waitlist_entry(
+            user=request.user,
+            equipment=equipment,
+            reservation_date=reservation_date,
+            time_slot=time_slot,
+            quantity=quantity,
+            request=request,
+        )
+        messages.success(request, f'已加入候补队列，排队位置：第 {entry.queue_position} 位')
+    except ReservationError as e:
+        messages.error(request, str(e))
+
+    return redirect('equipment:equipment_detail', pk=pk)
+
+
+@login_required
+@require_http_methods(['POST'])
+def waitlist_cancel(request, pk):
+    entry = get_object_or_404(WaitlistEntry, pk=pk)
+    try:
+        cancel_waitlist_entry(entry, request.user, request=request)
+        messages.success(request, '候补已取消')
+    except ReservationError as e:
+        messages.error(request, str(e))
+
+    return redirect('equipment:reservation_list')
+
+
+@login_required
+@user_passes_test(is_staff)
+@require_http_methods(['POST'])
+def waitlist_skip(request, pk):
+    entry = get_object_or_404(WaitlistEntry, pk=pk)
+    try:
+        skip_waitlist_entry(entry, request.user, request=request)
+        messages.success(request, f'已跳过候补：{entry.user.username}')
+    except ReservationError as e:
+        messages.error(request, str(e))
+
+    return redirect('equipment:admin_dashboard')
+
+
+@login_required
+@user_passes_test(is_staff)
+@require_http_methods(['POST'])
+def waitlist_reject(request, pk):
+    entry = get_object_or_404(WaitlistEntry, pk=pk)
+    reason = request.POST.get('reason', '')
+    try:
+        reject_waitlist_entry(entry, request.user, reason=reason, request=request)
+        messages.success(request, f'已拒绝候补：{entry.user.username}')
+    except ReservationError as e:
+        messages.error(request, str(e))
+
+    return redirect('equipment:admin_dashboard')
+
+
+@login_required
+@user_passes_test(is_staff)
+@require_http_methods(['POST'])
+def waitlist_promote(request, pk):
+    entry = get_object_or_404(WaitlistEntry, pk=pk)
+    try:
+        promote_waitlist_entry(entry, request.user, request=request)
+        messages.success(request, f'已提升候补为预约：{entry.user.username} - {entry.equipment.name}')
+    except ReservationError as e:
+        messages.error(request, str(e))
+
+    return redirect('equipment:admin_dashboard')

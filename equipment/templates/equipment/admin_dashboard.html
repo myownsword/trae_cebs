@@ -228,6 +228,59 @@
     </div>
 </div>
 
+<div class="row g-4 mt-2">
+    <div class="col-12">
+        <div class="card dash-card">
+            <div class="card-header bg-warning bg-opacity-25">
+                <h5 class="mb-0">📋 候补队列 ({{ waitlist_page.paginator.count }})</h5>
+            </div>
+            <div class="card-body card-body-scroll p-0">
+                {% for w in waitlist_page %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-1">
+                                <span class="badge bg-secondary me-1">#{{ w.queue_position }}</span>
+                                {{ w.equipment.name }} · {{ w.quantity }}件
+                            </h6>
+                            <p class="mb-1 text-muted small">申请人：{{ w.user.username }}</p>
+                            <p class="mb-0 text-muted small">{{ w.reservation_date }} {{ w.get_time_slot_display }}</p>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <form method="post" action="{% url 'equipment:waitlist_promote' w.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-success"
+                                        onclick="return confirm('确认提升此候补为待审批预约？')">
+                                    提升
+                                </button>
+                            </form>
+                            <form method="post" action="{% url 'equipment:waitlist_skip' w.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-secondary"
+                                        onclick="return confirm('确认跳过此候补？')">
+                                    跳过
+                                </button>
+                            </form>
+                            <button class="btn btn-sm btn-danger"
+                                    onclick="showWaitlistRejectModal({{ w.id }})">
+                                拒绝
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted text-center py-4 mb-0">暂无候补记录</p>
+                {% endfor %}
+            </div>
+            {% if waitlist_page.paginator.num_pages > 1 %}
+            <div class="card-footer py-2">
+                {% include "equipment/partials/pagination.html" with page=waitlist_page param_name="waitlist_page" %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="rejectModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -282,6 +335,30 @@
     </div>
 </div>
 
+<div class="modal fade" id="waitlistRejectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">拒绝候补</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" id="waitlistRejectForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">拒绝原因</label>
+                        <textarea name="reason" class="form-control" rows="3" placeholder="请输入拒绝原因..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-danger">确认拒绝</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -298,6 +375,13 @@ function showDamageProcessModal(id, name) {
     const form = document.getElementById('damageProcessForm');
     form.action = "{% url 'equipment:damage_process' 0 %}".replace('0', id);
     const modal = new bootstrap.Modal(document.getElementById('damageProcessModal'));
+    modal.show();
+}
+
+function showWaitlistRejectModal(id) {
+    const form = document.getElementById('waitlistRejectForm');
+    form.action = "{% url 'equipment:waitlist_reject' 0 %}".replace('0', id);
+    const modal = new bootstrap.Modal(document.getElementById('waitlistRejectModal'));
     modal.show();
 }
 </script>

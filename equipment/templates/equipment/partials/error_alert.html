@@ -1,4 +1,16 @@
 <div class="alert alert-danger">
     <strong>操作失败！</strong>
-    <p class="mb-0">{{ message }}</p>
+    <p class="mb-2">{{ message }}</p>
+    {% if show_waitlist %}
+    <form method="post" action="{% url 'equipment:reservation_create' equipment_pk %}"
+          hx-post="{% url 'equipment:reservation_create' equipment_pk %}"
+          hx-target="#modalResult">
+        {% csrf_token %}
+        <input type="hidden" name="reservation_date" value="{{ reservation_date }}">
+        <input type="hidden" name="time_slot" value="{{ time_slot }}">
+        <input type="hidden" name="quantity" value="{{ quantity }}">
+        <input type="hidden" name="join_waitlist" value="1">
+        <button type="submit" class="btn btn-sm btn-warning">加入候补队列</button>
+    </form>
+    {% endif %}
 </div>

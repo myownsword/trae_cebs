@@ -1,8 +1,8 @@
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, Max
 from django.utils import timezone
 from datetime import timedelta
-from .models import Equipment, Reservation, DamageRecord, AuditLog, StockFlow
+from .models import Equipment, Reservation, DamageRecord, AuditLog, StockFlow, WaitlistEntry
 
 
 class ReservationError(Exception):
@@ -128,6 +128,13 @@ def cancel_reservation(reservation, user, request=None):
             ip_address=ip,
         )
 
+        process_waitlist_auto(
+            reservation.equipment,
+            reservation.reservation_date,
+            reservation.time_slot,
+            request=request,
+        )
+
     return reservation
 
 
@@ -194,6 +201,13 @@ def reject_reservation(reservation, admin_user, reason='', request=None):
             target_id=reservation.id,
             details=f'拒绝预约，原因：{reason}',
             ip_address=ip,
+        )
+
+        process_waitlist_auto(
+            reservation.equipment,
+            reservation.reservation_date,
+            reservation.time_slot,
+            request=request,
         )
 
     return reservation
@@ -313,6 +327,14 @@ def return_reservation(reservation, admin_user, note='', is_damaged=False, damag
             details=f'登记归还 {reservation.equipment.name} {reservation.quantity} 件，归还人：{reservation.user.username}，损坏：{is_damaged}',
             ip_address=ip,
         )
+
+        if not is_damaged:
+            process_waitlist_auto(
+                reservation.equipment,
+                reservation.reservation_date,
+                reservation.time_slot,
+                request=request,
+            )
 
     return reservation
 
@@ -709,3 +731,228 @@ def set_equipment_online(equipment, admin_user, request=None):
         )
 
     return equipment
+
+
+def create_waitlist_entry(user, equipment, reservation_date, time_slot, quantity, request=None):
+    if equipment.status == Equipment.STATUS_DAMAGED:
+        raise ReservationError('该器材已损坏，无法加入候补')
+
+    if equipment.status == Equipment.STATUS_OFFLINE:
+        raise ReservationError('该器材已下架，无法加入候补')
+
+    if quantity <= 0:
+        raise ReservationError('候补数量必须大于0')
+
+    if quantity > equipment.total_quantity:
+        raise ReservationError(f'候补数量不能超过总库存 {equipment.total_quantity}')
+
+    existing = WaitlistEntry.objects.filter(
+        user=user,
+        equipment=equipment,
+        reservation_date=reservation_date,
+        time_slot=time_slot,
+        status=WaitlistEntry.STATUS_WAITING,
+    ).first()
+    if existing:
+        raise ReservationError('您已在该时段候补队列中，请勿重复加入')
+
+    with transaction.atomic():
+        max_pos = WaitlistEntry.objects.filter(
+            equipment=equipment,
+            reservation_date=reservation_date,
+            time_slot=time_slot,
+        ).aggregate(mp=Max('queue_position'))['mp'] or 0
+
+        entry = WaitlistEntry.objects.create(
+            user=user,
+            equipment=equipment,
+            reservation_date=reservation_date,
+            time_slot=time_slot,
+            quantity=quantity,
+            queue_position=max_pos + 1,
+            status=WaitlistEntry.STATUS_WAITING,
+        )
+
+        ip = get_client_ip(request) if request else None
+        log_audit(
+            user=user,
+            action=AuditLog.ACTION_WAITLIST_CREATE,
+            target_type='waitlist',
+            target_id=entry.id,
+            details=f'加入候补：{equipment.name} {quantity} 件，日期：{reservation_date}，时段：{time_slot}，排队位置：{entry.queue_position}',
+            ip_address=ip,
+        )
+
+    return entry
+
+
+def cancel_waitlist_entry(entry, user, request=None):
+    if entry.user != user:
+        raise ReservationError('只能取消自己的候补')
+
+    if entry.status != WaitlistEntry.STATUS_WAITING:
+        raise ReservationError('当前状态无法取消候补')
+
+    with transaction.atomic():
+        entry.status = WaitlistEntry.STATUS_CANCELLED
+        entry.save()
+
+        ip = get_client_ip(request) if request else None
+        log_audit(
+            user=user,
+            action=AuditLog.ACTION_WAITLIST_CANCEL,
+            target_type='waitlist',
+            target_id=entry.id,
+            details=f'取消候补：{entry.equipment.name} {entry.quantity} 件，日期：{entry.reservation_date}，时段：{entry.time_slot}',
+            ip_address=ip,
+        )
+
+    return entry
+
+
+def skip_waitlist_entry(entry, admin_user, request=None):
+    if not admin_user.is_staff:
+        raise ReservationError('只有管理员可以跳过候补')
+
+    if entry.status != WaitlistEntry.STATUS_WAITING:
+        raise ReservationError('只有等待中的候补可以跳过')
+
+    with transaction.atomic():
+        entry.status = WaitlistEntry.STATUS_SKIPPED
+        entry.save()
+
+        ip = get_client_ip(request) if request else None
+        log_audit(
+            user=admin_user,
+            action=AuditLog.ACTION_WAITLIST_SKIP,
+            target_type='waitlist',
+            target_id=entry.id,
+            details=f'跳过候补：{entry.user.username} - {entry.equipment.name} {entry.quantity} 件，日期：{entry.reservation_date}，时段：{entry.time_slot}，原排队位置：{entry.queue_position}',
+            ip_address=ip,
+        )
+
+    return entry
+
+
+def reject_waitlist_entry(entry, admin_user, reason='', request=None):
+    if not admin_user.is_staff:
+        raise ReservationError('只有管理员可以拒绝候补')
+
+    if entry.status != WaitlistEntry.STATUS_WAITING:
+        raise ReservationError('只有等待中的候补可以拒绝')
+
+    with transaction.atomic():
+        entry.status = WaitlistEntry.STATUS_REJECTED
+        entry.reject_reason = reason
+        entry.save()
+
+        ip = get_client_ip(request) if request else None
+        log_audit(
+            user=admin_user,
+            action=AuditLog.ACTION_WAITLIST_REJECT,
+            target_type='waitlist',
+            target_id=entry.id,
+            details=f'拒绝候补：{entry.user.username} - {entry.equipment.name} {entry.quantity} 件，原因：{reason}',
+            ip_address=ip,
+        )
+
+    return entry
+
+
+def promote_waitlist_entry(entry, admin_user, request=None):
+    if not admin_user.is_staff:
+        raise ReservationError('只有管理员可以提升候补')
+
+    if entry.status != WaitlistEntry.STATUS_WAITING:
+        raise ReservationError('只有等待中的候补可以提升')
+
+    available = get_available_quantity(
+        entry.equipment, entry.reservation_date, entry.time_slot
+    )
+    if available < entry.quantity:
+        raise ReservationError(f'库存不足，当前可用 {available} 件，候补需要 {entry.quantity} 件')
+
+    with transaction.atomic():
+        reservation = Reservation.objects.create(
+            user=entry.user,
+            equipment=entry.equipment,
+            reservation_date=entry.reservation_date,
+            time_slot=entry.time_slot,
+            quantity=entry.quantity,
+            status=Reservation.STATUS_PENDING,
+        )
+
+        entry.status = WaitlistEntry.STATUS_PROMOTED
+        entry.promoted_reservation = reservation
+        entry.save()
+
+        ip = get_client_ip(request) if request else None
+        log_audit(
+            user=admin_user,
+            action=AuditLog.ACTION_WAITLIST_PROMOTE,
+            target_type='waitlist',
+            target_id=entry.id,
+            details=f'手动提升候补为预约：{entry.user.username} - {entry.equipment.name} {entry.quantity} 件，预约ID：{reservation.id}',
+            ip_address=ip,
+        )
+
+        log_audit(
+            user=entry.user,
+            action=AuditLog.ACTION_CREATE,
+            target_type='reservation',
+            target_id=reservation.id,
+            details=f'候补自动转为预约：{entry.equipment.name} {entry.quantity} 件，日期：{entry.reservation_date}，时段：{entry.time_slot}',
+            ip_address=ip,
+        )
+
+    return entry
+
+
+def process_waitlist_auto(equipment, reservation_date, time_slot, request=None):
+    waiting_entries = WaitlistEntry.objects.filter(
+        equipment=equipment,
+        reservation_date=reservation_date,
+        time_slot=time_slot,
+        status=WaitlistEntry.STATUS_WAITING,
+    ).order_by('queue_position')
+
+    promoted = []
+    for entry in waiting_entries:
+        available = get_available_quantity(equipment, reservation_date, time_slot)
+        if available >= entry.quantity:
+            with transaction.atomic():
+                reservation = Reservation.objects.create(
+                    user=entry.user,
+                    equipment=equipment,
+                    reservation_date=reservation_date,
+                    time_slot=time_slot,
+                    quantity=entry.quantity,
+                    status=Reservation.STATUS_PENDING,
+                )
+
+                entry.status = WaitlistEntry.STATUS_PROMOTED
+                entry.promoted_reservation = reservation
+                entry.save()
+
+                ip = get_client_ip(request) if request else None
+                log_audit(
+                    user=None,
+                    action=AuditLog.ACTION_WAITLIST_PROMOTE,
+                    target_type='waitlist',
+                    target_id=entry.id,
+                    details=f'自动提升候补为预约：{entry.user.username} - {equipment.name} {entry.quantity} 件，预约ID：{reservation.id}',
+                    ip_address=ip,
+                )
+
+                log_audit(
+                    user=entry.user,
+                    action=AuditLog.ACTION_CREATE,
+                    target_type='reservation',
+                    target_id=reservation.id,
+                    details=f'候补自动转为预约：{equipment.name} {entry.quantity} 件，日期：{reservation_date}，时段：{time_slot}',
+                    ip_address=ip,
+                )
+
+            promoted.append(entry)
+
+    return promoted

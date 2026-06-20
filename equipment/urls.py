@@ -27,6 +27,12 @@ urlpatterns = [
     path('management/reservation/<int:pk>/pickup/', views.reservation_pickup, name='reservation_pickup'),
     path('management/reservation/<int:pk>/return/', views.reservation_return, name='reservation_return'),
 
+    path('waitlist/equipment/<int:pk>/join/', views.waitlist_join, name='waitlist_join'),
+    path('waitlist/<int:pk>/cancel/', views.waitlist_cancel, name='waitlist_cancel'),
+    path('management/waitlist/<int:pk>/skip/', views.waitlist_skip, name='waitlist_skip'),
+    path('management/waitlist/<int:pk>/reject/', views.waitlist_reject, name='waitlist_reject'),
+    path('management/waitlist/<int:pk>/promote/', views.waitlist_promote, name='waitlist_promote'),
+
     path('damages/', views.damage_list, name='damage_list'),
     path('equipment/<int:pk>/damage/', views.damage_report, name='damage_report'),
     path('damage/<int:pk>/process/', views.damage_process, name='damage_process'),

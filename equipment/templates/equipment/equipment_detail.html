@@ -119,6 +119,20 @@
                                             {% if day.afternoon <= 0 %}disabled{% endif %}>
                                         约下午
                                     </button>
+                                    {% if day.morning <= 0 %}
+                                    <button class="btn btn-sm btn-outline-warning"
+                                            data-date='{{ day.date|date:"Y-m-d" }}'
+                                            onclick="openReserveModal(this.getAttribute('data-date'), 'morning', {{ day.morning }})">
+                                        候补上午
+                                    </button>
+                                    {% endif %}
+                                    {% if day.afternoon <= 0 %}
+                                    <button class="btn btn-sm btn-outline-warning"
+                                            data-date='{{ day.date|date:"Y-m-d" }}'
+                                            onclick="openReserveModal(this.getAttribute('data-date'), 'afternoon', {{ day.afternoon }})">
+                                        候补下午
+                                    </button>
+                                    {% endif %}
                                     {% endif %}
                                 </td>
                             </tr>
@@ -188,6 +202,12 @@
                     <div class="mb-3">
                         <label class="form-label">用途说明</label>
                         <textarea name="purpose" class="form-control" rows="2" placeholder="请说明使用用途..."></textarea>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="join_waitlist" id="joinWaitlist" value="1">
+                        <label class="form-check-label" for="joinWaitlist">
+                            库存不足时加入候补队列
+                        </label>
                     </div>
                 </div>
                 <div class="modal-footer">
