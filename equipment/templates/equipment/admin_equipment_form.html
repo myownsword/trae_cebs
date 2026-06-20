@@ -1,0 +1,131 @@
+{% extends 'equipment/base.html' %}
+{% block title %}{% if mode == 'create' %}新增器材{% else %}编辑器材{% endif %} - 管理端{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">
+    {% if mode == 'create' %}<span class="text-primary">+</span> 新增器材{% else %}编辑器材 #{{ equipment.id }}{% endif %}
+  </h1>
+  <a href="{% url 'equipment:admin_equipment_list' %}" class="btn btn-outline-secondary">← 返回列表</a>
+</div>
+
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body">
+        <form method="post" class="needs-validation" novalidate>
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label">器材名称 <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control" required
+              value="{% if equipment %}{{ equipment.name }}{% endif %}"
+              placeholder="例如：帐篷-4人">
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">分类</label>
+              <input type="text" name="category" class="form-control"
+                value="{% if equipment %}{{ equipment.category|default:'' }}{% endif %}"
+                placeholder="例如：露营 / 运动 / 儿童 / 工具">
+            </div>
+            {% if mode == 'edit' %}
+            <div class="col-md-6 mb-3">
+              <label class="form-label">状态</label>
+              <select name="status" class="form-select">
+                {% for v, label in status_choices %}
+                <option value="{{ v }}" {% if equipment.status == v %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text small">
+                「损坏」通常由归还流程自动设置；「下架」表示临时停用。
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">
+                总库存 <span class="text-danger">*</span>
+                {% if mode == 'edit' %}
+                  <span class="badge bg-warning text-dark ms-1">已占用 {{ equipment.occupied_quantity }}</span>
+                {% endif %}
+              </label>
+              <input type="number" name="total_quantity" min="0" class="form-control" required
+                value="{% if mode == 'create' %}1{% else %}{{ equipment.total_quantity }}{% endif %}">
+              {% if mode == 'edit' %}
+              <div class="form-text small text-danger">
+                总库存不能低于已占用量（{{ equipment.occupied_quantity }} 件）。
+                调整总库存时，可借库存会同步增减。
+              </div>
+              {% endif %}
+            </div>
+            {% if mode == 'edit' %}
+            <div class="col-md-6 mb-3">
+              <label class="form-label">可借库存</label>
+              <input type="number" name="available_quantity" min="0" class="form-control"
+                value="{{ equipment.available_quantity }}">
+              <div class="form-text small">
+                可借库存不能超过总库存，也不能为负。
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label">说明</label>
+            <textarea name="description" rows="4" class="form-control"
+              placeholder="器材介绍、使用注意、配套附件清单等">{% if equipment %}{{ equipment.description }}{% endif %}</textarea>
+          </div>
+
+          {% if mode == 'edit' %}
+          <div class="alert alert-info small py-2">
+            <i class="bi bi-info-circle me-1"></i>
+            所有修改会写入审计记录；库存相关修改会同步生成库存流水。
+          </div>
+          {% endif %}
+
+          <div class="d-flex justify-content-end gap-2">
+            <a href="{% url 'equipment:admin_equipment_list' %}" class="btn btn-secondary">取消</a>
+            <button type="submit" class="btn btn-primary">
+              {% if mode == 'create' %}创建器材{% else %}保存修改{% endif %}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% if mode == 'edit' %}
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header">当前状态</div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-4">总库存</dt>
+          <dd class="col-8 fw-bold">{{ equipment.total_quantity }}</dd>
+          <dt class="col-4">已占用</dt>
+          <dd class="col-8 text-warning fw-bold">{{ equipment.occupied_quantity }}</dd>
+          <dt class="col-4">可借</dt>
+          <dd class="col-8 text-success fw-bold">{{ equipment.available_quantity }}</dd>
+          <dt class="col-4">状态</dt>
+          <dd class="col-8">
+            {% if equipment.status == 'normal' %}<span class="badge bg-success">正常</span>
+            {% elif equipment.status == 'damaged' %}<span class="badge bg-danger">损坏</span>
+            {% else %}<span class="badge bg-secondary">下架</span>{% endif %}
+          </dd>
+          <dt class="col-4">创建时间</dt>
+          <dd class="col-8 text-muted">{{ equipment.created_at|date:'Y-m-d H:i' }}</dd>
+          <dt class="col-4">更新时间</dt>
+          <dd class="col-8 text-muted">{{ equipment.updated_at|date:'Y-m-d H:i' }}</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="d-grid gap-2">
+      <a href="{% url 'equipment:admin_equipment_adjust_stock' equipment.pk %}" class="btn btn-outline-primary">📦 单独调整库存</a>
+      <a href="{% url 'equipment:stock_flow_list' %}?equipment={{ equipment.id }}" class="btn btn-outline-secondary" target="_blank">📊 查看该器材流水</a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

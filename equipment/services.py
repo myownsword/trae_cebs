@@ -69,6 +69,9 @@ def create_reservation(user, equipment, reservation_date, time_slot, quantity, p
     if equipment.status == Equipment.STATUS_DAMAGED:
         raise ReservationError('该器材已损坏，无法预约')
 
+    if equipment.status == Equipment.STATUS_OFFLINE:
+        raise ReservationError('该器材已下架，无法预约')
+
     if quantity <= 0:
         raise ReservationError('预约数量必须大于0')
 
@@ -138,6 +141,9 @@ def approve_reservation(reservation, admin_user, request=None):
     if reservation.equipment.status == Equipment.STATUS_DAMAGED:
         raise ReservationError('器材已损坏，无法批准预约')
 
+    if reservation.equipment.status == Equipment.STATUS_OFFLINE:
+        raise ReservationError('器材已下架，无法批准预约')
+
     available = get_available_quantity(
         reservation.equipment,
         reservation.reservation_date,
@@ -202,6 +208,9 @@ def pick_up_reservation(reservation, admin_user, request=None):
 
     if reservation.equipment.status == Equipment.STATUS_DAMAGED:
         raise ReservationError('器材已损坏，无法领取')
+
+    if reservation.equipment.status == Equipment.STATUS_OFFLINE:
+        raise ReservationError('器材已下架，无法领取')
 
     with transaction.atomic():
         reservation.status = Reservation.STATUS_PICKED
@@ -447,3 +456,256 @@ def get_pending_damages():
     return DamageRecord.objects.filter(
         status__in=[DamageRecord.STATUS_REPORTED, DamageRecord.STATUS_PROCESSING]
     ).select_related('equipment', 'reported_by').order_by('-created_at')
+
+
+def get_equipment_occupied_quantity(equipment):
+    return Reservation.objects.filter(
+        equipment=equipment,
+        status__in=[
+            Reservation.STATUS_PENDING,
+            Reservation.STATUS_APPROVED,
+            Reservation.STATUS_PICKED,
+            Reservation.STATUS_OVERDUE,
+        ]
+    ).aggregate(total=Sum('quantity'))['total'] or 0
+
+
+def create_equipment(admin_user, name, category='', description='', total_quantity=1, request=None):
+    if not admin_user.is_staff:
+        raise ReservationError('只有管理员可以新增器材')
+
+    if total_quantity <= 0:
+        raise ReservationError('总库存必须大于0')
+
+    if not name or not name.strip():
+        raise ReservationError('器材名称不能为空')
+
+    with transaction.atomic():
+        equipment = Equipment.objects.create(
+            name=name.strip(),
+            category=category.strip(),
+            description=description,
+            total_quantity=total_quantity,
+            available_quantity=total_quantity,
+            status=Equipment.STATUS_NORMAL,
+        )
+
+        StockFlow.objects.create(
+            equipment=equipment,
+            flow_type=StockFlow.FLOW_IN,
+            flow_reason=StockFlow.FLOW_REASON_PURCHASE,
+            quantity=total_quantity,
+            operator=admin_user,
+            note=f'新增器材：{name.strip()}',
+            balance_after=equipment.available_quantity,
+        )
+
+        ip = get_client_ip(request) if request else None
+        log_audit(
+            user=admin_user,
+            action=AuditLog.ACTION_CREATE,
+            target_type='equipment',
+            target_id=equipment.id,
+            details=f'新增器材：{name.strip()}，分类：{category.strip()}，总库存：{total_quantity}',
+            ip_address=ip,
+        )
+
+    return equipment
+
+
+def update_equipment(equipment, admin_user, name=None, category=None, description=None,
+                     total_quantity=None, available_quantity=None, status=None, request=None):
+    if not admin_user.is_staff:
+        raise ReservationError('只有管理员可以编辑器材')
+
+    with transaction.atomic():
+        changes = []
+        old_total = equipment.total_quantity
+        old_avail = equipment.available_quantity
+        old_status = equipment.status
+
+        if name is not None and name.strip() != equipment.name:
+            if not name.strip():
+                raise ReservationError('器材名称不能为空')
+            changes.append(f'名称：{equipment.name} → {name.strip()}')
+            equipment.name = name.strip()
+
+        if category is not None and category.strip() != equipment.category:
+            changes.append(f'分类：{equipment.category or "（空）"} → {category.strip() or "（空）"}')
+            equipment.category = category.strip()
+
+        if description is not None and description != equipment.description:
+            changes.append('描述已更新')
+            equipment.description = description
+
+        if status is not None and status != equipment.status:
+            status_labels = dict(Equipment.STATUS_CHOICES)
+            changes.append(
+                f'状态：{status_labels.get(old_status, old_status)} → {status_labels.get(status, status)}'
+            )
+            equipment.status = status
+
+        if total_quantity is not None and total_quantity != equipment.total_quantity:
+            if total_quantity < 0:
+                raise ReservationError('总库存不能为负数')
+            occupied = get_equipment_occupied_quantity(equipment)
+            if total_quantity < occupied:
+                raise ReservationError(
+                    f'总库存不能低于已占用量 {occupied} 件（待审批/已批准/已领取/逾期预约）'
+                )
+
+            diff = total_quantity - equipment.total_quantity
+            changes.append(f'总库存：{old_total} → {total_quantity}')
+            equipment.total_quantity = total_quantity
+
+            if equipment.available_quantity + diff < 0:
+                raise ReservationError('调整后可用库存不能为负数')
+            equipment.available_quantity = equipment.available_quantity + diff
+
+            if diff != 0:
+                StockFlow.objects.create(
+                    equipment=equipment,
+                    flow_type=StockFlow.FLOW_IN if diff > 0 else StockFlow.FLOW_OUT,
+                    flow_reason=StockFlow.FLOW_REASON_ADJUST,
+                    quantity=abs(diff),
+                    operator=admin_user,
+                    note=f'编辑调整总库存：{old_total} → {total_quantity}',
+                    balance_after=equipment.available_quantity,
+                )
+
+        if available_quantity is not None and available_quantity != equipment.available_quantity:
+            if available_quantity < 0:
+                raise ReservationError('可用库存不能为负数')
+            if available_quantity > equipment.total_quantity:
+                raise ReservationError(f'可用库存不能超过总库存 {equipment.total_quantity}')
+            diff = available_quantity - equipment.available_quantity
+            changes.append(f'可用库存：{old_avail} → {available_quantity}')
+            equipment.available_quantity = available_quantity
+
+            if diff != 0:
+                StockFlow.objects.create(
+                    equipment=equipment,
+                    flow_type=StockFlow.FLOW_IN if diff > 0 else StockFlow.FLOW_OUT,
+                    flow_reason=StockFlow.FLOW_REASON_ADJUST,
+                    quantity=abs(diff),
+                    operator=admin_user,
+                    note=f'编辑调整可用库存：{old_avail} → {available_quantity}',
+                    balance_after=equipment.available_quantity,
+                )
+
+        equipment.save()
+
+        if changes:
+            ip = get_client_ip(request) if request else None
+            log_audit(
+                user=admin_user,
+                action=AuditLog.ACTION_UPDATE,
+                target_type='equipment',
+                target_id=equipment.id,
+                details='；'.join(changes),
+                ip_address=ip,
+            )
+
+    return equipment
+
+
+def adjust_equipment_stock(equipment, admin_user, adjustment, note='', request=None):
+    if not admin_user.is_staff:
+        raise ReservationError('只有管理员可以调整库存')
+
+    if adjustment == 0:
+        raise ReservationError('调整数量不能为0')
+
+    with transaction.atomic():
+        new_total = equipment.total_quantity + adjustment
+        if new_total < 0:
+            raise ReservationError('调整后总库存不能为负数')
+
+        occupied = get_equipment_occupied_quantity(equipment)
+        if new_total < occupied:
+            raise ReservationError(
+                f'调整后总库存 {new_total} 件低于已占用量 {occupied} 件，禁止调整'
+            )
+
+        old_total = equipment.total_quantity
+        old_avail = equipment.available_quantity
+
+        equipment.total_quantity = new_total
+        equipment.available_quantity = equipment.available_quantity + adjustment
+        equipment.save()
+
+        StockFlow.objects.create(
+            equipment=equipment,
+            flow_type=StockFlow.FLOW_IN if adjustment > 0 else StockFlow.FLOW_OUT,
+            flow_reason=StockFlow.FLOW_REASON_ADJUST,
+            quantity=abs(adjustment),
+            operator=admin_user,
+            note=f'库存调整：{old_total} → {new_total}，{note[:100]}',
+            balance_after=equipment.available_quantity,
+        )
+
+        ip = get_client_ip(request) if request else None
+        log_audit(
+            user=admin_user,
+            action=AuditLog.ACTION_UPDATE,
+            target_type='equipment',
+            target_id=equipment.id,
+            details=(f'库存调整：{"+" if adjustment > 0 else ""}{adjustment} 件，'
+                     f'总库存：{old_total} → {new_total}，'
+                     f'可用：{old_avail} → {equipment.available_quantity}，备注：{note}'),
+            ip_address=ip,
+        )
+
+    return equipment
+
+
+def set_equipment_offline(equipment, admin_user, reason='', request=None):
+    if not admin_user.is_staff:
+        raise ReservationError('只有管理员可以下架器材')
+
+    if equipment.status == Equipment.STATUS_OFFLINE:
+        raise ReservationError('该器材已经下架')
+
+    with transaction.atomic():
+        old_status = equipment.status
+        equipment.status = Equipment.STATUS_OFFLINE
+        equipment.save()
+
+        ip = get_client_ip(request) if request else None
+        log_audit(
+            user=admin_user,
+            action=AuditLog.ACTION_UPDATE,
+            target_type='equipment',
+            target_id=equipment.id,
+            details=f'下架器材：{equipment.name}，原因：{reason}',
+            ip_address=ip,
+        )
+
+    return equipment
+
+
+def set_equipment_online(equipment, admin_user, request=None):
+    if not admin_user.is_staff:
+        raise ReservationError('只有管理员可以恢复器材')
+
+    if equipment.status != Equipment.STATUS_OFFLINE:
+        raise ReservationError('只有下架状态的器材可以恢复上架')
+
+    if equipment.total_quantity <= 0:
+        raise ReservationError('总库存为0，无法恢复上架，请先调整库存')
+
+    with transaction.atomic():
+        equipment.status = Equipment.STATUS_NORMAL
+        equipment.save()
+
+        ip = get_client_ip(request) if request else None
+        log_audit(
+            user=admin_user,
+            action=AuditLog.ACTION_UPDATE,
+            target_type='equipment',
+            target_id=equipment.id,
+            details=f'恢复上架：{equipment.name}',
+            ip_address=ip,
+        )
+
+    return equipment

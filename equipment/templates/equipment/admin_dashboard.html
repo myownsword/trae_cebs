@@ -5,6 +5,30 @@
 {% block content %}
 <h2 class="mb-4">🎛️ 管理后台</h2>
 
+<div class="card mb-4 border-primary">
+  <div class="card-body">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+      <div>
+        <h5 class="card-title mb-2">📦 器材维护</h5>
+        <div class="d-flex flex-wrap gap-3 small text-muted mb-2">
+          <span>共 <strong class="text-primary">{{ equipment_stats.total }}</strong> 个器材</span>
+          <span class="text-success">正常 <strong>{{ equipment_stats.normal }}</strong></span>
+          <span class="text-danger">损坏 <strong>{{ equipment_stats.damaged }}</strong></span>
+          <span class="text-secondary">下架 <strong>{{ equipment_stats.offline }}</strong></span>
+          <span>|</span>
+          <span>库存总量 <strong class="text-primary">{{ equipment_stats.total_qty }}</strong> 件</span>
+          <span>可借 <strong class="text-success">{{ equipment_stats.avail_qty }}</strong> 件</span>
+        </div>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="{% url 'equipment:admin_equipment_list' %}" class="btn btn-primary">器材列表</a>
+        <a href="{% url 'equipment:admin_equipment_create' %}" class="btn btn-outline-primary">+ 新增器材</a>
+        <a href="{% url 'equipment:stock_flow_list' %}" class="btn btn-outline-secondary">📊 库存流水</a>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="row g-4">
     <div class="col-md-6">
         <div class="card">

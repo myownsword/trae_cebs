@@ -28,6 +28,12 @@ from .services import (
     get_overdue_reservations,
     get_pending_damages,
     get_available_quantity,
+    get_equipment_occupied_quantity,
+    create_equipment,
+    update_equipment,
+    adjust_equipment_stock,
+    set_equipment_offline,
+    set_equipment_online,
 )
 
 
@@ -241,12 +247,22 @@ def admin_dashboard(request):
     overdue_reservations = get_overdue_reservations()
     pending_damages = get_pending_damages()
 
+    equipment_stats = {
+        'total': Equipment.objects.count(),
+        'normal': Equipment.objects.filter(status=Equipment.STATUS_NORMAL).count(),
+        'damaged': Equipment.objects.filter(status=Equipment.STATUS_DAMAGED).count(),
+        'offline': Equipment.objects.filter(status=Equipment.STATUS_OFFLINE).count(),
+        'total_qty': Equipment.objects.aggregate(s=Sum('total_quantity'))['s'] or 0,
+        'avail_qty': Equipment.objects.aggregate(s=Sum('available_quantity'))['s'] or 0,
+    }
+
     context = {
         'pending_reservations': pending_reservations,
         'approved_reservations': approved_reservations,
         'picked_reservations': picked_reservations,
         'overdue_reservations': list(overdue_reservations),
         'pending_damages': list(pending_damages),
+        'equipment_stats': equipment_stats,
     }
     return render(request, 'equipment/admin_dashboard.html', context)
 
@@ -522,3 +538,178 @@ def export_stock_csv(request):
     response = HttpResponse(buffer.getvalue(), content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="stock_flows_{month}.csv"'
     return response
+
+
+@login_required
+@user_passes_test(is_staff)
+def admin_equipment_list(request):
+    status = request.GET.get('status', '')
+    search = request.GET.get('search', '')
+    category = request.GET.get('category', '')
+
+    equipments = Equipment.objects.all()
+    if status:
+        equipments = equipments.filter(status=status)
+    if search:
+        equipments = equipments.filter(name__icontains=search)
+    if category:
+        equipments = equipments.filter(category=category)
+
+    equipments = equipments.order_by('-updated_at')
+
+    categories = list(Equipment.objects.values_list('category', flat=True).distinct())
+    categories = [c for c in categories if c]
+
+    for eq in equipments:
+        eq.occupied_quantity = get_equipment_occupied_quantity(eq)
+
+    context = {
+        'equipments': equipments,
+        'current_status': status,
+        'current_search': search,
+        'current_category': category,
+        'status_choices': Equipment.STATUS_CHOICES,
+        'categories': categories,
+    }
+    return render(request, 'equipment/admin_equipment_list.html', context)
+
+
+@login_required
+@user_passes_test(is_staff)
+def admin_equipment_create(request):
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        category = request.POST.get('category', '').strip()
+        description = request.POST.get('description', '')
+        try:
+            total_quantity = int(request.POST.get('total_quantity', 1))
+        except (ValueError, TypeError):
+            messages.error(request, '总库存必须是数字')
+            return render(request, 'equipment/admin_equipment_form.html', {'mode': 'create'})
+
+        try:
+            equipment = create_equipment(
+                admin_user=request.user,
+                name=name,
+                category=category,
+                description=description,
+                total_quantity=total_quantity,
+                request=request,
+            )
+            messages.success(request, f'器材「{equipment.name}」创建成功')
+            return redirect('equipment:admin_equipment_list')
+        except ReservationError as e:
+            messages.error(request, str(e))
+
+    return render(request, 'equipment/admin_equipment_form.html', {'mode': 'create'})
+
+
+@login_required
+@user_passes_test(is_staff)
+def admin_equipment_edit(request, pk):
+    equipment = get_object_or_404(Equipment, pk=pk)
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        category = request.POST.get('category', '').strip()
+        description = request.POST.get('description', '')
+        status = request.POST.get('status', equipment.status)
+
+        try:
+            total_quantity = int(request.POST.get('total_quantity', equipment.total_quantity))
+        except (ValueError, TypeError):
+            messages.error(request, '总库存必须是数字')
+            return render(request, 'equipment/admin_equipment_form.html', {
+                'mode': 'edit', 'equipment': equipment
+            })
+
+        try:
+            available_quantity = int(request.POST.get('available_quantity', equipment.available_quantity))
+        except (ValueError, TypeError):
+            messages.error(request, '可借库存必须是数字')
+            return render(request, 'equipment/admin_equipment_form.html', {
+                'mode': 'edit', 'equipment': equipment
+            })
+
+        try:
+            update_equipment(
+                equipment=equipment,
+                admin_user=request.user,
+                name=name,
+                category=category,
+                description=description,
+                total_quantity=total_quantity,
+                available_quantity=available_quantity,
+                status=status,
+                request=request,
+            )
+            messages.success(request, f'器材「{equipment.name}」更新成功')
+            return redirect('equipment:admin_equipment_list')
+        except ReservationError as e:
+            messages.error(request, str(e))
+
+    equipment.occupied_quantity = get_equipment_occupied_quantity(equipment)
+    return render(request, 'equipment/admin_equipment_form.html', {
+        'mode': 'edit',
+        'equipment': equipment,
+        'status_choices': Equipment.STATUS_CHOICES,
+    })
+
+
+@login_required
+@user_passes_test(is_staff)
+@require_http_methods(['POST'])
+def admin_equipment_offline(request, pk):
+    equipment = get_object_or_404(Equipment, pk=pk)
+    reason = request.POST.get('reason', '')
+    try:
+        set_equipment_offline(equipment, request.user, reason=reason, request=request)
+        messages.success(request, f'器材「{equipment.name}」已下架')
+    except ReservationError as e:
+        messages.error(request, str(e))
+    return redirect('equipment:admin_equipment_list')
+
+
+@login_required
+@user_passes_test(is_staff)
+@require_http_methods(['POST'])
+def admin_equipment_online(request, pk):
+    equipment = get_object_or_404(Equipment, pk=pk)
+    try:
+        set_equipment_online(equipment, request.user, request=request)
+        messages.success(request, f'器材「{equipment.name}」已恢复上架')
+    except ReservationError as e:
+        messages.error(request, str(e))
+    return redirect('equipment:admin_equipment_list')
+
+
+@login_required
+@user_passes_test(is_staff)
+def admin_equipment_adjust_stock(request, pk):
+    equipment = get_object_or_404(Equipment, pk=pk)
+
+    if request.method == 'POST':
+        try:
+            adjustment = int(request.POST.get('adjustment', 0))
+        except (ValueError, TypeError):
+            messages.error(request, '调整数量必须是整数')
+            equipment.occupied_quantity = get_equipment_occupied_quantity(equipment)
+            return render(request, 'equipment/admin_equipment_adjust.html', {'equipment': equipment})
+
+        note = request.POST.get('note', '')
+
+        try:
+            adjust_equipment_stock(
+                equipment=equipment,
+                admin_user=request.user,
+                adjustment=adjustment,
+                note=note,
+                request=request,
+            )
+            messages.success(request, f'器材「{equipment.name}」库存调整成功')
+            return redirect('equipment:admin_equipment_list')
+        except ReservationError as e:
+            messages.error(request, str(e))
+
+    equipment.occupied_quantity = get_equipment_occupied_quantity(equipment)
+    return render(request, 'equipment/admin_equipment_adjust.html', {'equipment': equipment})

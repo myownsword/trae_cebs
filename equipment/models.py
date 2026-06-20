@@ -7,9 +7,11 @@ from datetime import date, time
 class Equipment(models.Model):
     STATUS_NORMAL = 'normal'
     STATUS_DAMAGED = 'damaged'
+    STATUS_OFFLINE = 'offline'
     STATUS_CHOICES = [
         (STATUS_NORMAL, '正常'),
         (STATUS_DAMAGED, '损坏'),
+        (STATUS_OFFLINE, '下架'),
     ]
 
     name = models.CharField('器材名称', max_length=100)

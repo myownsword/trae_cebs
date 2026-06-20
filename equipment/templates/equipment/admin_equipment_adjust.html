@@ -1,0 +1,187 @@
+{% extends 'equipment/base.html' %}
+{% block title %}调整库存 - {{ equipment.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">调整库存：{{ equipment.name }}</h1>
+  <a href="{% url 'equipment:admin_equipment_list' %}" class="btn btn-outline-secondary">← 返回列表</a>
+</div>
+
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card mb-3">
+      <div class="card-header bg-light">
+        库存现状
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-4 text-center">
+            <div class="display-6 fw-bold text-primary">{{ equipment.total_quantity }}</div>
+            <div class="text-muted small">总库存</div>
+          </div>
+          <div class="col-md-4 text-center">
+            <div class="display-6 fw-bold text-warning">{{ equipment.occupied_quantity }}</div>
+            <div class="text-muted small">已占用 <span class="badge bg-light text-dark">最低不能低于此数</span></div>
+          </div>
+          <div class="col-md-4 text-center">
+            <div class="display-6 fw-bold text-success">{{ equipment.available_quantity }}</div>
+            <div class="text-muted small">可借</div>
+          </div>
+        </div>
+        <hr>
+        <dl class="row mb-0 small text-muted">
+          <dt class="col-4">当前状态</dt>
+          <dd class="col-8">
+            {% if equipment.status == 'normal' %}<span class="badge bg-success">正常</span>
+            {% elif equipment.status == 'damaged' %}<span class="badge bg-danger">损坏</span>
+            {% else %}<span class="badge bg-secondary">下架</span>{% endif %}
+          </dd>
+          <dt class="col-4">占用来源</dt>
+          <dd class="col-8">待审批 + 已批准 + 已领取 + 逾期预约 合计</dd>
+          <dt class="col-4">调整后总量下限</dt>
+          <dd class="col-8 text-danger">不能低于已占用量 {{ equipment.occupied_quantity }} 件</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label">调整数量（加用正数，减用负数） <span class="text-danger">*</span></label>
+            <input type="number" name="adjustment" id="adjustment" class="form-control form-control-lg"
+              required placeholder="例如：+3 增加3件，或 -2 减少2件">
+            <div class="row mt-2 g-2">
+              <div class="col">
+                <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="setAdj(1)">+1</button>
+              </div>
+              <div class="col">
+                <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="setAdj(5)">+5</button>
+              </div>
+              <div class="col">
+                <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="setAdj(10)">+10</button>
+              </div>
+              <div class="col">
+                <button type="button" class="btn btn-sm btn-outline-warning w-100" onclick="setAdj(-1)">-1</button>
+              </div>
+              <div class="col">
+                <button type="button" class="btn btn-sm btn-outline-warning w-100" onclick="setAdj(-5)">-5</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-3 p-3 bg-light rounded border" id="previewBox">
+            <div class="small text-muted">调整后预览：</div>
+            <div class="d-flex align-items-center gap-3 mt-1">
+              <div>总库存：<span class="fw-bold">{{ equipment.total_quantity }}</span>
+                <span id="adjArrow" class="mx-2">→</span>
+                <span id="newTotal" class="fw-bold text-primary">{{ equipment.total_quantity }}</span>
+              </div>
+              <div>可借：<span class="fw-bold">{{ equipment.available_quantity }}</span>
+                <span class="mx-2">→</span>
+                <span id="newAvail" class="fw-bold text-success">{{ equipment.available_quantity }}</span>
+              </div>
+            </div>
+            <div id="warnBox" class="mt-2 small text-danger d-none"></div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">备注/原因</label>
+            <textarea name="note" rows="2" class="form-control"
+              placeholder="例如：采购入库、盘点损耗、丢失、部分维修报废等"></textarea>
+          </div>
+
+          <div class="alert alert-warning small py-2 mb-3">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            库存调整会生成库存流水记录，并写入审计日志。
+          </div>
+
+          <div class="d-flex justify-content-end gap-2">
+            <a href="{% url 'equipment:admin_equipment_list' %}" class="btn btn-secondary">取消</a>
+            <button type="submit" class="btn btn-primary">确认调整</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">最近库存流水</div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>时间</th>
+              <th>类型</th>
+              <th>原因</th>
+              <th class="text-end">数量</th>
+              <th class="text-end">余额</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in equipment.stock_flows.all|slice:':20' %}
+            <tr>
+              <td class="small text-muted">{{ f.created_at|date:'m-d H:i' }}</td>
+              <td>
+                {% if f.flow_type == 'in' %}<span class="text-success">入库</span>
+                {% else %}<span class="text-danger">出库</span>{% endif %}
+              </td>
+              <td class="small">{{ f.get_flow_reason_display }}</td>
+              <td class="text-end fw-bold {% if f.flow_type == 'in' %}text-success{% else %}text-danger{% endif %}">
+                {% if f.flow_type == 'in' %}+{% endif %}{{ f.quantity }}
+              </td>
+              <td class="text-end">{{ f.balance_after }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5" class="text-center py-3 text-muted">暂无流水记录</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if equipment.stock_flows.all|length > 20 %}
+      <div class="card-footer text-center small">
+        <a href="{% url 'equipment:stock_flow_list' %}?equipment={{ equipment.id }}" class="text-decoration-none">查看全部流水 →</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  const currentTotal = {{ equipment.total_quantity }};
+  const currentAvail = {{ equipment.available_quantity }};
+  const occupied = {{ equipment.occupied_quantity }};
+
+  function setAdj(n) {
+    document.getElementById('adjustment').value = n;
+    updatePreview();
+  }
+
+  function updatePreview() {
+    const adj = parseInt(document.getElementById('adjustment').value) || 0;
+    const newTotal = currentTotal + adj;
+    const newAvail = currentAvail + adj;
+    document.getElementById('newTotal').textContent = newTotal;
+    document.getElementById('newAvail').textContent = newAvail;
+    const warn = document.getElementById('warnBox');
+    const msgs = [];
+    if (newTotal < 0) msgs.push('调整后总库存不能为负');
+    if (newTotal < occupied) msgs.push(`调整后总库存 ${newTotal} 低于已占用量 ${occupied}`);
+    if (newAvail < 0) msgs.push('调整后可用库存不能为负');
+    if (adj === 0) msgs.push('请输入非0的调整数量');
+    if (msgs.length) {
+      warn.className = 'mt-2 small text-danger';
+      warn.innerHTML = msgs.map(m => '⚠ ' + m).join('<br>');
+    } else {
+      warn.className = 'mt-2 small text-success d-none';
+      warn.innerHTML = '';
+    }
+  }
+
+  document.getElementById('adjustment').addEventListener('input', updatePreview);
+  updatePreview();
+</script>
+{% endblock %}

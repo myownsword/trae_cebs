@@ -16,6 +16,12 @@ urlpatterns = [
     path('reservation/<int:pk>/cancel/', views.reservation_cancel, name='reservation_cancel'),
 
     path('management/', views.admin_dashboard, name='admin_dashboard'),
+    path('management/equipments/', views.admin_equipment_list, name='admin_equipment_list'),
+    path('management/equipments/create/', views.admin_equipment_create, name='admin_equipment_create'),
+    path('management/equipment/<int:pk>/edit/', views.admin_equipment_edit, name='admin_equipment_edit'),
+    path('management/equipment/<int:pk>/offline/', views.admin_equipment_offline, name='admin_equipment_offline'),
+    path('management/equipment/<int:pk>/online/', views.admin_equipment_online, name='admin_equipment_online'),
+    path('management/equipment/<int:pk>/adjust-stock/', views.admin_equipment_adjust_stock, name='admin_equipment_adjust_stock'),
     path('management/reservation/<int:pk>/approve/', views.reservation_approve, name='reservation_approve'),
     path('management/reservation/<int:pk>/reject/', views.reservation_reject, name='reservation_reject'),
     path('management/reservation/<int:pk>/pickup/', views.reservation_pickup, name='reservation_pickup'),
